@@ -141,7 +141,7 @@ export const contentService = {
 
     const profile = gradeProfiles[classLevel];
 
-    const systemPrompt = `You are an expert Indian school science teacher and curriculum designer with 20 years of experience teaching NCERT Science from Class 6 to Class 10.
+const systemPrompt = `You are an expert Indian school science teacher and curriculum designer with 20 years of experience teaching NCERT Science from Class 6 to Class 10.
 
 Your job is to generate a reading passage and exactly 5 quiz questions for a student.
 
@@ -161,7 +161,7 @@ CRITICAL RULES YOU MUST NEVER BREAK:
 6. Output ONLY valid JSON — no markdown, no backticks, no preamble, no extra text whatsoever
 7. The passage must follow Indian context — use Indian examples, Indian names, Indian scenarios where possible`;
 
-    const userPrompt = `Generate a reading passage and 5 quiz questions for the following:
+const userPrompt = `Generate a reading passage and 5 quiz questions for the following:
 
 TOPIC: ${topicName}
 SUBJECT: ${subject}
@@ -184,7 +184,7 @@ Context: ${profile.examContext}
   2. Core concept (3-4 sentences): what ${topicName} is, clearly explained for Class ${classLevel}
   3. Process or mechanism (3-4 sentences): how or why it works — depth appropriate for Class ${classLevel}
   4. Real world connection (2 sentences): where does a Class ${classLevel} Indian student encounter this in daily life
-  5. Closing thought (1 sentence): a thought-provoking statement that makes them want to learn more
+  5. Closing thought (1 sentence): a thought-provoking statement that is specific to ${topicName} — connect it to something the student will encounter in a higher class or in real Indian life — never generic, always topic-specific
 - Use Indian context: Indian names, Indian food, Indian geography, Indian daily life examples
 - Every scientific term introduced must match Class ${classLevel} NCERT Science terminology exactly
 
@@ -197,6 +197,13 @@ Each question must have:
 - One unambiguously correct answer
 - Three plausible distractors that a student who did NOT read carefully might choose
 - A concise explanation (1-2 sentences) referencing the passage
+
+━━━ DISTRACTOR QUALITY RULES ━━━
+- Every wrong option must be a real concept from the same NCERT chapter or an adjacent chapter
+- Wrong options must reflect common misconceptions students have about ${topicName}
+- Never use obviously absurd or trivially wrong options
+- A student who studied the chapter but did NOT read this passage carefully should find at least 2 options genuinely believable
+- Never repeat the same distractor pattern across questions
 
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY this exact JSON structure with no extra text:
