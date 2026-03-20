@@ -1,6 +1,6 @@
 import { getDriver } from "../db/neo4j";
 import { AppError } from "../middleware/errorHandler";
-
+import neo4j from "neo4j-driver";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface GraphNode {
@@ -79,14 +79,14 @@ export const neo4jService = {
       );
 
       const nodes: GraphNode[] = nodesResult.records.map((r) => {
-        const mastery = r.get("mastery") as number;
-        const attempts = r.get("attempts") as number;
+        const mastery = Number(r.get("mastery"));
+        const attempts = Number(r.get("attempts"));
 
         return {
           id: r.get("id") as string,
           name: r.get("name") as string,
           subject: r.get("subject") as string,
-          classLevel: r.get("classLevel") as number,
+          classLevel: Number(r.get("classLevel")),
           mastery,
           attempts,
           trend: r.get("trend") as GraphNode["trend"],
@@ -175,14 +175,14 @@ export const neo4jService = {
       );
 
       const nodes: GraphNode[] = nodesResult.records.map((r) => {
-        const mastery = r.get("mastery") as number;
-        const attempts = r.get("attempts") as number;
+        const mastery = Number(r.get("mastery"));
+        const attempts = Number(r.get("attempts"));
 
         return {
           id: r.get("id") as string,
           name: r.get("name") as string,
           subject: r.get("subject") as string,
-          classLevel: r.get("classLevel") as number,
+          classLevel: Number(r.get("classLevel")),
           mastery,
           attempts,
           trend: r.get("trend") as GraphNode["trend"],
@@ -226,7 +226,7 @@ export const neo4jService = {
           attempted: attempted.length,
           mastered: mastered.length,
           struggling: struggling.length,
-          averageMastery: Math.round(averageMastery * 100) / 10,
+          averageMastery: Math.round(averageMastery * 100) / 100,
         },
       };
     } catch (error) {
@@ -280,18 +280,18 @@ export const neo4jService = {
            attempts      AS attempts
          ORDER BY t.classLevel ASC, topicMastery DESC
          LIMIT $limit`,
-        { studentId, subject, limit },
+        { studentId, subject, limit: neo4j.int(limit) },
       );
 
       return result.records.map((r) => ({
         id: r.get("id") as string,
         name: r.get("name") as string,
-        classLevel: r.get("classLevel") as number,
-        mastery: r.get("mastery") as number,
-        attempts: r.get("attempts") as number,
+        classLevel: Number(r.get("classLevel")),
+        mastery: Number(r.get("mastery")),
+        attempts: Number(r.get("attempts")),
         masteryLevel: getMasteryLevel(
-          r.get("mastery") as number,
-          r.get("attempts") as number,
+          Number(r.get("mastery")),
+          Number(r.get("attempts")),
         ),
       }));
     } catch (error) {
