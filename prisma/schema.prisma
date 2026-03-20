@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+ 
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions     Session[]
+  quizAttempts QuizAttempt[]
+}
+
+model Topic {
+  id         String @id @default(cuid())
+  name       String
+  subject    String
+  classLevel Int
+
+  @@unique([name, subject, classLevel])
+
+  sessions Session[]
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  studentId  String
+  topicId    String
+  classLevel Int
+  passage    String
+  questions  Json
+  createdAt  DateTime @default(now())
+
+  student     Student      @relation(fields: [studentId], references: [id])
+  topic       Topic        @relation(fields: [topicId], references: [id])
+  quizAttempt QuizAttempt?
+}
+
+model QuizAttempt {
+  id        String   @id @default(cuid())
+  studentId String
+  sessionId String   @unique
+  score     Int
+  total     Int
+  answers   Json
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  session Session @relation(fields: [sessionId], references: [id])
+}
