@@ -5,9 +5,9 @@ import { AppError } from "../middleware/errorHandler";
 
 export interface MasteryUpdateInput {
   studentId: string;
-  topicId: string; // Neo4j topic id (e.g. 'c9_fundamental_unit')
-  score: number; // correct answers
-  total: number; // total questions (always 5)
+  topicId: string;
+  score: number;
+  total: number;
 }
 
 export interface MasteryResult {
@@ -34,14 +34,12 @@ export interface MasteryResult {
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
-// Learning rate decreases as attempts increase
 const getLearningRate = (attempts: number): number => {
-  if (attempts === 0) return 0.6; // first attempt — high weight
-  if (attempts === 1) return 0.4; // second attempt — moderate weight
-  return 0.3; // third attempt+ — lower weight
+  if (attempts === 0) return 0.6;
+  if (attempts === 1) return 0.4;
+  return 0.3;
 };
 
-// Calculate new mastery using weighted update formula
 const calculateNewMastery = (
   oldMastery: number,
   scorePercent: number,
@@ -49,11 +47,9 @@ const calculateNewMastery = (
 ): number => {
   const alpha = getLearningRate(attempts);
   const raw = oldMastery + alpha * (scorePercent - oldMastery);
-  // Clamp between 0 and 1, round to 4 decimal places
   return Math.round(Math.min(1, Math.max(0, raw)) * 10000) / 10000;
 };
 
-// Determine trend based on score vs previous mastery
 const getTrend = (
   scorePercent: number,
   previousMastery: number,
@@ -63,7 +59,6 @@ const getTrend = (
   return "stable";
 };
 
-// Determine mastery level label from score
 const getMasteryLevel = (
   mastery: number,
 ): "struggling" | "developing" | "proficient" | "mastered" => {
@@ -73,10 +68,8 @@ const getMasteryLevel = (
   return "mastered";
 };
 
-// Calculate prerequisite boost — only if score > 50%
 const getPrerequisiteBoost = (scorePercent: number): number => {
   if (scorePercent <= 0.5) return 0;
-  // Max boost is 0.1
   return Math.min(0.1, (scorePercent - 0.5) * 0.15);
 };
 
@@ -98,7 +91,7 @@ export const masteryService = {
         `MATCH (s:Student {id: $studentId})
          MATCH (t:Topic {id: $topicId})
          OPTIONAL MATCH (s)-[k:KNOWS]->(t)
-         RETURN 
+         RETURN
            t.name AS topicName,
            coalesce(k.mastery, 0.0) AS mastery,
            coalesce(k.attempts, 0) AS attempts`,
@@ -114,8 +107,8 @@ export const masteryService = {
 
       const record = currentMasteryResult.records[0];
       const topicName = record.get("topicName") as string;
-      const previousMastery = record.get("mastery") as number;
-      const attempts = record.get("attempts") as number;
+      const previousMastery = Number(record.get("mastery"));
+      const attempts = Number(record.get("attempts"));
 
       // ── Step 3: Calculate new mastery ────────────────────────────────────
       const newMastery = calculateNewMastery(
@@ -151,11 +144,10 @@ export const masteryService = {
       const prerequisiteBoosts: MasteryResult["prerequisiteBoosts"] = [];
 
       if (boost > 0) {
-        // Get all direct prerequisites of this topic
         const prereqResult = await session.run(
           `MATCH (t:Topic {id: $topicId})-[:REQUIRES]->(prereq:Topic)
            OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(prereq)
-           RETURN 
+           RETURN
              prereq.id AS prereqId,
              prereq.name AS prereqName,
              coalesce(k.mastery, 0.0) AS prereqMastery,
@@ -166,13 +158,12 @@ export const masteryService = {
         for (const prereqRecord of prereqResult.records) {
           const prereqId = prereqRecord.get("prereqId") as string;
           const prereqName = prereqRecord.get("prereqName") as string;
-          const prereqMastery = prereqRecord.get("prereqMastery") as number;
-          const prereqAttempts = prereqRecord.get("prereqAttempts") as number;
+          const prereqMastery = Number(prereqRecord.get("prereqMastery"));
+          const prereqAttempts = Number(prereqRecord.get("prereqAttempts"));
 
-          // Only boost if prerequisite hasn't been mastered already
           if (prereqMastery < 0.8) {
             const boostedMastery = Math.min(
-              0.8, // prerequisite boost can never push above 0.8 — must be earned directly
+              0.8,
               Math.round((prereqMastery + boost) * 10000) / 10000,
             );
 
@@ -209,7 +200,7 @@ export const masteryService = {
          OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(prereq)
          WITH prereq, coalesce(k.mastery, 0.0) AS prereqMastery
          WHERE prereqMastery < 0.5
-         RETURN 
+         RETURN
            prereq.id AS prereqId,
            prereq.name AS prereqName,
            prereqMastery`,
@@ -220,10 +211,8 @@ export const masteryService = {
         gapResult.records.map((gapRecord) => ({
           topicId: gapRecord.get("prereqId") as string,
           topicName: gapRecord.get("prereqName") as string,
-          mastery: gapRecord.get("prereqMastery") as number,
-          masteryLevel: getMasteryLevel(
-            gapRecord.get("prereqMastery") as number,
-          ),
+          mastery: Number(gapRecord.get("prereqMastery")),
+          masteryLevel: getMasteryLevel(Number(gapRecord.get("prereqMastery"))),
         }));
 
       return {
@@ -248,7 +237,6 @@ export const masteryService = {
     }
   },
 
-  // Get mastery for a single topic for a student
   async getTopicMastery(studentId: string, topicId: string) {
     const driver = getDriver();
     const session = driver.session();
@@ -274,14 +262,14 @@ export const masteryService = {
 
       const r = result.records[0];
       return {
-        topicId: r.get("topicId"),
-        topicName: r.get("topicName"),
-        classLevel: r.get("classLevel"),
-        mastery: r.get("mastery"),
-        attempts: r.get("attempts"),
-        trend: r.get("trend"),
-        lastAttempted: r.get("lastAttempted"),
-        masteryLevel: getMasteryLevel(r.get("mastery")),
+        topicId: r.get("topicId") as string,
+        topicName: r.get("topicName") as string,
+        classLevel: Number(r.get("classLevel")),
+        mastery: Number(r.get("mastery")),
+        attempts: Number(r.get("attempts")),
+        trend: r.get("trend") as string | null,
+        lastAttempted: r.get("lastAttempted") as string | null,
+        masteryLevel: getMasteryLevel(Number(r.get("mastery"))),
       };
     } finally {
       await session.close();
