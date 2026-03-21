@@ -10,7 +10,7 @@ import studentRoutes from "./routes/students";
 import contentRoutes from "./routes/content";
 import quizRoutes from "./routes/quiz";
 import graphRoutes from "./routes/graph";
-
+import subtopicRoutes from "./routes/subtopics"
 const app = express();
 
 // Middleware
@@ -27,7 +27,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/content", contentRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/graph", graphRoutes);
-
+app.use("/api/subtopics", subtopicRoutes);
 // Error handler — must be last
 app.use(errorHandler);
 

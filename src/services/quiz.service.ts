@@ -1,14 +1,12 @@
 import { prisma } from "../db/prisma";
-import { masteryService } from "./mastery.service";
+import { subtopicService } from "./subtopics.service";
 import { AppError } from "../middleware/errorHandler";
 import { Prisma } from "@prisma/client";
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { getDriver } from "../db/neo4j";
 
 export interface SubmitQuizInput {
   studentId: string;
   sessionId: string;
-  // Array of chosen option indices (0-3) for each question
-  // e.g. [1, 2, 0, 3, 1] means student chose index 1 for Q1, 2 for Q2 etc.
   answers: number[];
 }
 
@@ -16,184 +14,54 @@ export interface AnswerResult {
   questionIndex: number;
   cognitiveLevel: string;
   question: string;
-  chosen: number; // index student chose
-  correct: number; // correct index
+  chosen: number;
+  correct: number;
   isCorrect: boolean;
   explanation: string;
 }
 
-export interface QuizSubmitResult {
-  score: number;
-  total: number;
-  percentage: number;
-  grade: string;
-  answerResults: AnswerResult[];
-  mastery: {
-    topicId: string;
-    topicName: string;
-    previousMastery: number;
-    newMastery: number;
-    trend: string;
-    masteryLevel: string;
-    attempts: number;
-  };
-  prerequisiteBoosts: Array<{
-    topicId: string;
-    topicName: string;
-    previousMastery: number;
-    newMastery: number;
-  }>;
-  knowledgeGaps: Array<{
-    topicId: string;
-    topicName: string;
-    mastery: number;
-    masteryLevel: string;
-  }>;
-  message: string;
-}
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-const getGrade = (percentage: number): string => {
-  if (percentage >= 80) return "Excellent";
-  if (percentage >= 60) return "Good";
-  if (percentage >= 40) return "Needs Practice";
+const getGrade = (pct: number): string => {
+  if (pct >= 80) return "Excellent";
+  if (pct >= 60) return "Good";
+  if (pct >= 40) return "Needs Practice";
   return "Keep Trying";
 };
 
-const getResultMessage = (
-  percentage: number,
-  topicName: string,
-  trend: string,
-): string => {
-  if (percentage === 100)
-    return `Perfect score on ${topicName}! You have a strong grasp of this topic.`;
-  if (percentage >= 80 && trend === "improving")
-    return `Great work on ${topicName}! You are improving steadily.`;
-  if (percentage >= 80)
-    return `Strong performance on ${topicName}! Keep it up.`;
-  if (percentage >= 60)
-    return `Good effort on ${topicName}. A little more practice will get you there.`;
-  if (percentage >= 40 && trend === "improving")
-    return `You are making progress on ${topicName}. Focus on the gaps identified below.`;
-  if (percentage >= 40)
-    return `${topicName} needs more practice. Review the explanations carefully.`;
-  return `${topicName} is challenging right now. Consider revisiting the prerequisite topics first.`;
-};
-
-// ─── Service ──────────────────────────────────────────────────────────────────
-const getStudentTopicContext = async (
-  studentId: string,
-  neo4jTopicId: string,
-  sessionId: string,
-): Promise<{
-  previousAttempts: number;
-  previousMastery: number;
-  weakCognitiveLevels: string[];
-  prerequisiteGaps: string[];
-}> => {
-  // Get previous quiz attempts for this topic
-  const previousAttempts = await prisma.quizAttempt.findMany({
-    where: {
-      studentId,
-      session: { neo4jTopicId },
-      NOT: { sessionId }, // exclude current session
-    },
-    include: { session: true },
-    orderBy: { createdAt: "desc" },
-    take: 3,
-  });
-
-  // Find weak cognitive levels from previous attempts
-  const weakCognitiveLevels: string[] = [];
-  if (previousAttempts.length > 0) {
-    const allAnswers = previousAttempts.flatMap(
-      (a) => a.answers as Array<{ cognitiveLevel: string; isCorrect: boolean }>,
-    );
-    const cogLevelStats: Record<string, { correct: number; total: number }> =
-      {};
-    for (const answer of allAnswers) {
-      if (!cogLevelStats[answer.cognitiveLevel]) {
-        cogLevelStats[answer.cognitiveLevel] = { correct: 0, total: 0 };
-      }
-      cogLevelStats[answer.cognitiveLevel].total++;
-      if (answer.isCorrect) cogLevelStats[answer.cognitiveLevel].correct++;
-    }
-    for (const [level, stats] of Object.entries(cogLevelStats)) {
-      if (stats.correct / stats.total < 0.5) weakCognitiveLevels.push(level);
-    }
-  }
-
-  // Get prerequisite gaps from Neo4j
-  const { getDriver } = await import("../db/neo4j");
-  const driver = getDriver();
-  const neo4jSession = driver.session();
-  const prereqGaps: string[] = [];
-
-  try {
-    const gapResult = await neo4jSession.run(
-      `MATCH (t:Topic {id: $topicId})-[:REQUIRES]->(prereq:Topic)
-       OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(prereq)
-       WITH prereq, coalesce(k.mastery, 0.0) AS prereqMastery
-       WHERE prereqMastery < 0.5
-       RETURN prereq.name AS name`,
-      { topicId: neo4jTopicId, studentId },
-    );
-    for (const record of gapResult.records) {
-      prereqGaps.push(record.get("name") as string);
-    }
-  } finally {
-    await neo4jSession.close();
-  }
-
-  // Get current mastery
-  const { masteryService } = await import("./mastery.service");
-  const topicMastery = await masteryService.getTopicMastery(
-    studentId,
-    neo4jTopicId,
-  );
-
-  return {
-    previousAttempts: previousAttempts.length,
-    previousMastery: topicMastery.mastery,
-    weakCognitiveLevels,
-    prerequisiteGaps: prereqGaps,
-  };
+const getMessage = (pct: number, name: string, trend: string): string => {
+  if (pct === 100) return `Perfect score on ${name}! Subtopic complete.`;
+  if (pct >= 60 && trend === "improving")
+    return `${name} complete! Moving to the next subtopic.`;
+  if (pct >= 60) return `Good work — ${name} is now complete!`;
+  if (pct >= 40)
+    return `Getting there on ${name}. One more attempt should do it.`;
+  return `${name} needs more practice. Try again with a fresh passage.`;
 };
 
 export const quizService = {
-  async submitQuiz(input: SubmitQuizInput): Promise<QuizSubmitResult> {
+  async submitQuiz(input: SubmitQuizInput) {
     const { studentId, sessionId, answers } = input;
 
-    // ── Step 1: Validate inputs ───────────────────────────────────────────────
     if (!answers || answers.length !== 5) {
-      throw new AppError(400, "Exactly 5 answers are required");
+      throw new AppError(400, "Exactly 5 answers required");
     }
-
     if (answers.some((a) => a < 0 || a > 3)) {
-      throw new AppError(400, "Each answer must be an index between 0 and 3");
+      throw new AppError(400, "Each answer must be 0-3");
     }
 
-    // ── Step 2: Fetch session from Postgres ───────────────────────────────────
+    // Fetch session
     const session = await prisma.session.findFirst({
       where: { id: sessionId, studentId },
-      include: { topic: true },
+      include: { subtopic: true },
     });
+    if (!session) throw new AppError(404, "Session not found");
 
-    if (!session) {
-      throw new AppError(404, "Session not found");
-    }
-
-    // ── Step 3: Check if already attempted ───────────────────────────────────
-    const existingAttempt = await prisma.quizAttempt.findUnique({
+    // Check not already attempted
+    const existing = await prisma.quizAttempt.findUnique({
       where: { sessionId },
     });
+    if (existing) throw new AppError(409, "Session already attempted");
 
-    if (existingAttempt) {
-      throw new AppError(409, "This session has already been attempted");
-    }
-
-    // ── Step 4: Score the answers ─────────────────────────────────────────────
+    // Score answers
     const questions = session.questions as Array<{
       index: number;
       cognitiveLevel: string;
@@ -208,7 +76,6 @@ export const quizService = {
       const chosen = answers[i];
       const isCorrect = chosen === q.correctIndex;
       if (isCorrect) score++;
-
       return {
         questionIndex: i,
         cognitiveLevel: q.cognitiveLevel,
@@ -223,7 +90,7 @@ export const quizService = {
     const total = questions.length;
     const percentage = Math.round((score / total) * 100);
 
-    // ── Step 5: Save attempt to Postgres ──────────────────────────────────────
+    // Save attempt
     await prisma.quizAttempt.create({
       data: {
         studentId,
@@ -234,22 +101,45 @@ export const quizService = {
       },
     });
 
-    // ── Step 6: Update mastery in Neo4j ───────────────────────────────────────
-    // We use the Neo4j topic id (from our seed) not the Postgres topic id
-    // The session stores topicId as Postgres cuid — we need the Neo4j id
-    // So we use topic name + classLevel to find the Neo4j node id
-    const neo4jTopicId = session.neo4jTopicId;
-
-    const masteryResult = await masteryService.updateMastery({
+    // Update subtopic mastery
+    const masteryResult = await subtopicService.updateSubtopicMastery(
       studentId,
-      topicId: neo4jTopicId,
+      session.subtopicId,
       score,
       total,
-    });
+    );
+    // After masteryResult calculation, add gap detection
+    const driver = getDriver();
+    const neo4jSession = driver.session();
+    const knowledgeGaps: Array<{
+      topicId: string;
+      topicName: string;
+      mastery: number;
+    }> = [];
 
-    const message = getResultMessage(
+    try {
+      const gapResult = await neo4jSession.run(
+        `MATCH (t:Topic {id: $topicId})-[:REQUIRES]->(prereq:Topic)
+     OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(prereq)
+     WITH prereq, coalesce(k.mastery, 0.0) AS m
+     WHERE m < 0.5
+     RETURN prereq.id AS id, prereq.name AS name, m AS mastery`,
+        { topicId: session.subtopic.topicId, studentId },
+      );
+      for (const r of gapResult.records) {
+        knowledgeGaps.push({
+          topicId: r.get("id") as string,
+          topicName: r.get("name") as string,
+          mastery: Number(r.get("mastery")),
+        });
+      }
+    } finally {
+      await neo4jSession.close();
+    }
+
+    const message = getMessage(
       percentage,
-      session.topic.name,
+      session.subtopic.name,
       masteryResult.trend,
     );
 
@@ -259,54 +149,29 @@ export const quizService = {
       percentage,
       grade: getGrade(percentage),
       answerResults,
-      mastery: {
-        topicId: masteryResult.topicId,
-        topicName: masteryResult.topicName,
+      subtopicResult: {
+        subtopicId: session.subtopicId,
+        subtopicName: session.subtopic.name,
+        subtopicOrder: session.subtopic.order,
         previousMastery: masteryResult.previousMastery,
         newMastery: masteryResult.newMastery,
+        isComplete: masteryResult.isComplete,
+        justCompleted: masteryResult.justCompleted,
         trend: masteryResult.trend,
-        masteryLevel: masteryResult.masteryLevel,
-        attempts: masteryResult.attempts,
+        nextSubtopicId: masteryResult.nextSubtopicId,
+        chapterMastery: masteryResult.chapterMastery,
       },
-      prerequisiteBoosts: masteryResult.prerequisiteBoosts,
-      knowledgeGaps: masteryResult.knowledgeGaps,
+      knowledgeGaps,
       message,
     };
   },
 
-  // Fetch an existing attempt result (for page refresh)
   async getAttempt(sessionId: string, studentId: string) {
     const attempt = await prisma.quizAttempt.findFirst({
       where: { sessionId, studentId },
-      include: {
-        session: {
-          include: { topic: true },
-        },
-      },
+      include: { session: { include: { subtopic: true } } },
     });
-
-    if (!attempt) {
-      throw new AppError(404, "Attempt not found");
-    }
-
+    if (!attempt) throw new AppError(404, "Attempt not found");
     return attempt;
   },
-
-  // New method — check if session has attempt
-  async getSessionWithAttempt(sessionId: string, studentId: string) {
-    const session = await prisma.session.findFirst({
-      where: { id: sessionId, studentId },
-      include: {
-        topic: true,
-        quizAttempt: true,
-      },
-    });
-
-    if (!session) {
-      throw new AppError(404, "Session not found");
-    }
-
-    return session;
-  },
 };
-

@@ -2,10 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { env } from "../config/env";
 import { prisma } from "../db/prisma";
 import { AppError } from "../middleware/errorHandler";
+import { getSubtopicById } from "../data/subtopics";
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-
-// ─── Grade Calibration Profiles ──────────────────────────────────────────────
 
 const gradeProfiles: Record<
   number,
@@ -19,196 +18,164 @@ const gradeProfiles: Record<
     examContext: string;
   }
 > = {
-  6: {
+  11: {
     vocabulary:
-      "simple everyday words only — if a scientific term is introduced, immediately explain it in brackets using a household analogy",
+      "NCERT Class 11 Chemistry terminology — introduce new terms with brief inline explanation, assume basic science knowledge from Class 10",
     sentenceStyle:
-      'short and crisp sentences, maximum 12-15 words each, use simple conjunctions like "because", "so", "and", "but"',
+      "mix of medium and longer sentences, technical but readable, occasional short punchy statements for emphasis",
     analogyDomain:
-      "household objects, food, playground, animals, things a 11-year-old sees daily",
-    tone: 'warm and curious, like a friendly teacher telling a story — start with "Have you ever noticed..." or "Did you know..."',
+      "laboratory experiments, everyday chemical phenomena, industrial processes, human body chemistry, Indian examples like rusting of iron gates, curd formation, cooking",
+    tone: "academic and engaging — connects every concept to a real observation or experiment a student can visualise",
     conceptDepth:
-      "purely observational and descriptive — what happens, not why at a molecular level. No formulas, no complex processes",
+      "fundamental principles with mechanisms — explain why not just what, introduce equations in word form, connect to periodic trends and atomic structure",
     priorKnowledge:
-      "only basic primary school knowledge — assume the student knows nothing beyond Class 5",
-    examContext: "Class 6 NCERT Science — first year of middle school",
-  },
-  7: {
-    vocabulary:
-      "introduce subject-specific terms but always define them inline the first time they appear",
-    sentenceStyle:
-      "mix of short and medium sentences, occasionally compound sentences are fine",
-    analogyDomain:
-      "school environment, sports, cooking, nature, body functions they can feel",
-    tone: 'exploratory and slightly more formal — "Let us understand...", "Think about what happens when..."',
-    conceptDepth:
-      "cause and effect relationships — not just what happens but a simple why. One level of reasoning",
-    priorKnowledge:
-      "Class 6 NCERT Science topics — student knows basic classification, simple observations",
-    examContext: "Class 7 NCERT Science — building on Class 6 foundations",
-  },
-  8: {
-    vocabulary:
-      "subject terminology used freely — do not over-explain basic terms but define advanced ones",
-    sentenceStyle:
-      "medium to longer sentences, more complex structures allowed",
-    analogyDomain:
-      "technology, body functions, real world applications like factories, hospitals, agriculture",
-    tone: 'informative and process-driven — "The process works as follows...", "This mechanism is responsible for..."',
-    conceptDepth:
-      "mechanisms and processes — explain how things work step by step, multi-level reasoning allowed",
-    priorKnowledge:
-      "Class 6-7 NCERT Science — student understands basic biology, chemistry changes, motion concepts",
+      "Class 10 CBSE Science and Maths — student knows basic atomic structure, chemical reactions, acids bases, periodic table basics",
     examContext:
-      "Class 8 NCERT Science — bridge year before high school science",
+      "Class 11 NCERT Chemistry — JEE and NEET foundation year, concepts must be precise and exam-relevant",
   },
-  9: {
+  12: {
     vocabulary:
-      'full scientific terminology aligned with NCERT Class 9 — terms like "inertia", "diffusion", "mitosis" used without excessive handholding',
+      "complete NCERT Class 12 Chemistry language — board exam and JEE/NEET aligned, precise definitions, technical terms used freely",
     sentenceStyle:
-      "varied sentence length — mix short punchy statements with longer explanatory ones",
+      "varied — technical descriptions, mechanistic explanations, comparative statements, precise and information-dense",
     analogyDomain:
-      "everyday phenomena explained scientifically — why sky is blue, how brakes work, why we sweat",
-    tone: "academic but engaging — connects every concept to an observable phenomenon the student has experienced",
+      "industrial applications, medical relevance, environmental chemistry, real-world Indian examples like Lead acid battery in vehicles, electroplating industries, drug action",
+    tone: "exam-precise and application-focused — every sentence carries information, connects theory to applications and board exam relevance",
     conceptDepth:
-      "laws, principles, and definitions introduced verbally — equations can be mentioned in word form, interconnections between topics highlighted",
+      "full depth — mechanisms, exceptions, numerical applications, interconnections between chapters, JEE/NEET level reasoning",
     priorKnowledge:
-      "Class 6-8 NCERT Science — student has solid foundation in basic biology, chemistry, and physics",
+      "Complete Class 11 NCERT Chemistry — student has solid foundation in atomic structure, bonding, thermodynamics, equilibrium, organic basics",
     examContext:
-      "Class 9 NCERT Science — first year of high school, foundation for board exams",
-  },
-  10: {
-    vocabulary:
-      "complete scientific language — board exam aligned terminology, precise definitions expected",
-    sentenceStyle:
-      "varied, includes technical descriptions, classification and comparison sentences",
-    analogyDomain:
-      "real world applications, career relevance (medicine, engineering, environment), global implications",
-    tone: "precise and exam-aware — every sentence adds information, no fluff, connects to broader scientific understanding",
-    conceptDepth:
-      "full conceptual depth — mechanisms, exceptions, interconnections between chapters, implications and applications",
-    priorKnowledge:
-      "Class 6-9 NCERT Science — complete middle school foundation assumed",
-    examContext:
-      "Class 10 NCERT Science — board exam year, highest rigor required",
+      "Class 12 NCERT Chemistry — board exams and JEE/NEET, highest precision required",
   },
 };
-
-// ─── Bloom's Taxonomy Question Types ─────────────────────────────────────────
 
 const questionTypes = [
   {
     level: "recall",
     instruction:
-      "Test direct recall — the answer must be explicitly stated in the passage. This is the easiest question.",
+      "Test direct recall — answer explicitly stated in passage. Easiest question.",
   },
   {
     level: "vocabulary",
     instruction:
-      "Test understanding of a specific scientific term used in the passage — ask what it means or what it refers to.",
+      "Test understanding of a specific chemical term used in the passage.",
   },
   {
     level: "cause_and_effect",
     instruction:
-      "Test cause and effect reasoning — ask why something happens or what causes a specific outcome mentioned in the passage.",
+      "Test cause and effect — why something happens based on the passage.",
   },
   {
     level: "inference",
     instruction:
-      "Test inference — the answer is NOT directly stated but logically follows from what the passage describes. The student must think one step beyond.",
+      "Test inference — not directly stated but logically follows from the passage.",
   },
   {
     level: "application",
     instruction:
-      "Test application — give a real world scenario and ask what would happen based on the concept explained in the passage.",
+      "Test application — real world chemistry scenario based on passage concepts.",
   },
 ];
-
-// ─── Main Generation Function ─────────────────────────────────────────────────
 
 export const contentService = {
   async generatePassageAndQuestions(
     studentId: string,
-    topicId: string,
-    topicName: string,
-    subject: string,
-    classLevel: number,
-    studentContext?: {
+    subtopicId: string,
+    studentContext: {
       previousAttempts: number;
       previousMastery: number;
       weakCognitiveLevels: string[];
       prerequisiteGaps: string[];
+      completedSubtopicsInChapter: string[];
     },
   ) {
-    // Validate classLevel
-    if (classLevel < 6 || classLevel > 10) {
-      throw new AppError(400, "Class level must be between 6 and 10");
+    // Get subtopic definition
+    const subtopicDef = getSubtopicById(subtopicId);
+    if (!subtopicDef)
+      throw new AppError(404, `Subtopic ${subtopicId} not found`);
+
+    const {
+      classLevel,
+      subject,
+      name: subtopicName,
+      keyConceptsSummary,
+      topicId,
+    } = subtopicDef;
+
+    if (classLevel !== 11 && classLevel !== 12) {
+      throw new AppError(400, "Only Class 11 and 12 supported");
     }
 
     const profile = gradeProfiles[classLevel];
-    const isRetry = studentContext && studentContext.previousAttempts > 0;
-    const systemPrompt = `You are an expert Indian school science teacher and curriculum designer with 20 years of experience teaching NCERT Science from Class 6 to Class 10.
+    const isRetry = studentContext.previousAttempts > 0;
 
-Your job is to generate a reading passage and exactly 5 quiz questions for a student.
+    const systemPrompt = `You are an expert Indian Chemistry teacher and JEE/NEET educator with 20 years of experience teaching NCERT Chemistry for Class 11 and 12.
+
+Your job is to generate a focused reading passage and exactly 5 quiz questions on a SPECIFIC SUBTOPIC of a Chemistry chapter.
 
 ${
   isRetry
     ? `
 ⚠️ RETRY ATTEMPT — MANDATORY DIFFERENT CONTENT ⚠️
-Student has attempted this topic ${studentContext!.previousAttempts} time(s).
-Current mastery: ${Math.round(studentContext!.previousMastery * 100)}%.
-Weak areas: ${studentContext!.weakCognitiveLevels.join(", ") || "inference and application"}.
-Prerequisite gaps: ${studentContext!.prerequisiteGaps.join(", ") || "none"}.
+Student has attempted this subtopic ${studentContext.previousAttempts} time(s).
+Current mastery: ${Math.round(studentContext.previousMastery * 100)}%.
+Weak question types: ${studentContext.weakCognitiveLevels.join(", ") || "inference and application"}.
+Prerequisite gaps: ${studentContext.prerequisiteGaps.join(", ") || "none"}.
 
-YOU MUST NOT generate content similar to a standard introductory passage.
-Choose an advanced angle, industrial application, exception, or interconnection with other topics.
-A student who read a typical first passage on this topic should encounter genuinely new information.
+YOU MUST generate a passage that:
+1. Approaches the SAME subtopic from a completely different angle or application
+2. Uses different Indian examples and scenarios than a standard first attempt
+3. Focuses heavily on the weak question types listed above
+4. Does NOT repeat the standard textbook introduction to this subtopic
 `
     : ""
 }
 
-You have a deep understanding of:
-- The exact NCERT Science curriculum for each class from 6 to 10
-- The cognitive development stage of students at each class level
-- Age-appropriate language, analogies, and examples for Indian school students
-- Bloom's Taxonomy — your questions always progress from recall to application
-- What concepts a student at each class level has already studied and what is new
+CRITICAL RULES:
+1. The passage MUST be ONLY about the specific subtopic — do not drift to other subtopics
+2. Every question must be answerable from the passage alone
+3. Output ONLY valid JSON — no markdown, no backticks, no extra text
+4. Use Indian context throughout — Indian names, Indian industries, Indian examples
+5. Content must be NCERT-aligned and JEE/NEET relevant`;
 
-CRITICAL RULES YOU MUST NEVER BREAK:
-1. The passage must be written SPECIFICALLY for a Class ${classLevel} student — not simpler, not harder
-2. Every question must be answerable using ONLY the passage — no outside knowledge required
-3. The correct answer must be unambiguous — only one option can be correct
-4. Distractors (wrong options) must be plausible but clearly wrong to a student who read the passage carefully
-5. The explanation must reference the exact part of the passage that contains the answer
-6. Output ONLY valid JSON — no markdown, no backticks, no preamble, no extra text whatsoever
-7. The passage must follow Indian context — use Indian examples, Indian names, Indian scenarios where possible`;
-    const contextSection =
-      studentContext && studentContext.previousAttempts > 0
+    const completedContext =
+      studentContext.completedSubtopicsInChapter.length > 0
         ? `
-━━━ STUDENT LEARNING HISTORY — READ THIS FIRST ━━━
-ATTEMPTS ON THIS TOPIC: ${studentContext.previousAttempts}
-CURRENT MASTERY: ${Math.round(studentContext.previousMastery * 100)}%
-STRUGGLED WITH QUESTION TYPES: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "none identified"}
-PREREQUISITE GAPS: ${studentContext.prerequisiteGaps.length > 0 ? studentContext.prerequisiteGaps.join(", ") : "none"}
-
-MANDATORY INSTRUCTIONS FOR RETRY:
-— Pick a subtopic or application of ${topicName} that is NOT typically covered in a first introduction
-— For Acids Bases and Salts examples: first attempt covers neutralisation basics → retry should cover indicators, salt hydrolysis, or buffer action
-— Use completely different Indian scenarios, names, and real-world examples
-— The passage MUST NOT feel like a restatement of basic definitions
-— Weight your questions heavily toward: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "inference and application"}
-— Make inference and application questions more challenging than standard
+━━━ ALREADY COVERED IN THIS CHAPTER ━━━
+The student has already completed these subtopics — do NOT re-explain these concepts:
+${studentContext.completedSubtopicsInChapter.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+You may reference these briefly as prior knowledge but do not teach them again.
 `
         : "";
-    const userPrompt = `Generate a reading passage and 5 quiz questions for the following:
-${contextSection}
-TOPIC: ${topicName}
+
+    const retryContext = isRetry
+      ? `
+━━━ STUDENT LEARNING HISTORY ━━━
+Previous attempts: ${studentContext.previousAttempts}
+Current mastery: ${Math.round(studentContext.previousMastery * 100)}%
+Struggling with: ${studentContext.weakCognitiveLevels.join(", ") || "none identified"}
+Prerequisite gaps: ${studentContext.prerequisiteGaps.join(", ") || "none"}
+
+MANDATORY: Choose a different angle, application, or example set than a standard introduction.
+Weight your questions heavily toward: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "inference and application"}
+`
+      : "";
+
+    const userPrompt = `Generate a reading passage and 5 quiz questions for:
+
+SUBTOPIC: ${subtopicName}
+CHAPTER: ${topicId.replace(/_/g, " ")}
 SUBJECT: ${subject}
-CLASS LEVEL: Class ${classLevel}
-EXAM BOARD: NCERT (Indian curriculum)
+CLASS: ${classLevel}
+EXAM BOARD: NCERT (JEE/NEET relevant)
+${retryContext}
+${completedContext}
+━━━ WHAT THIS SUBTOPIC COVERS ━━━
+Focus ONLY on these concepts: ${keyConceptsSummary}
 
 ━━━ CLASS ${classLevel} STUDENT PROFILE ━━━
-Vocabulary style: ${profile.vocabulary}
+Vocabulary: ${profile.vocabulary}
 Sentence style: ${profile.sentenceStyle}
 Analogy domain: ${profile.analogyDomain}
 Tone: ${profile.tone}
@@ -217,46 +184,44 @@ Prior knowledge: ${profile.priorKnowledge}
 Context: ${profile.examContext}
 
 ━━━ PASSAGE REQUIREMENTS ━━━
-- Length: strictly 200-250 words
-- Structure must follow this exact order:
-  1. Hook (1-2 sentences): a surprising fact or relatable question about ${topicName}
-  2. Core concept (3-4 sentences): what ${topicName} is, clearly explained for Class ${classLevel}
-  3. Process or mechanism (3-4 sentences): how or why it works — depth appropriate for Class ${classLevel}
-  4. Real world connection (2 sentences): where does a Class ${classLevel} Indian student encounter this in daily life
-  5. Closing thought (1 sentence): a thought-provoking statement that is specific to ${topicName} — connect it to something the student will encounter in a higher class or in real Indian life — never generic, always topic-specific
-- Use Indian context: Indian names, Indian food, Indian geography, Indian daily life examples
-- Every scientific term introduced must match Class ${classLevel} NCERT Science terminology exactly
+- Length: strictly 220-260 words
+- Structure:
+  1. Hook (1-2 sentences): surprising fact or real phenomenon about this subtopic
+  2. Core concept (3-4 sentences): the main idea of THIS subtopic clearly explained
+  3. Mechanism or detail (3-4 sentences): how/why it works at the appropriate depth
+  4. Indian real-world connection (2 sentences): where this subtopic appears in Indian industry, medicine, or daily life
+  5. Bridge to next (1 sentence): how mastering this subtopic connects to the next concept in the chapter
+- Every example must be Indian — Indian industries, Indian scientists where relevant, Indian daily life
+- Terminology must match NCERT Class ${classLevel} exactly
 
 ━━━ QUESTION REQUIREMENTS ━━━
-Generate exactly 5 questions following Bloom's Taxonomy progression:
 ${questionTypes.map((qt, i) => `Q${i + 1} — ${qt.level.toUpperCase()}: ${qt.instruction}`).join("\n")}
 
-Each question must have:
-- Exactly 4 options labeled A, B, C, D
-- One unambiguously correct answer
-- Three plausible distractors that a student who did NOT read carefully might choose
-- A concise explanation (1-2 sentences) referencing the passage
+Each question:
+- 4 options (A, B, C, D)
+- One unambiguous correct answer
+- Three distractors that are real Chemistry concepts — plausible to an unprepared student
+- Explanation referencing the exact passage line
 
-━━━ DISTRACTOR QUALITY RULES ━━━
-- Every wrong option must be a real concept from the same NCERT chapter or an adjacent chapter
-- Wrong options must reflect common misconceptions students have about ${topicName}
-- Never use obviously absurd or trivially wrong options
-- A student who studied the chapter but did NOT read this passage carefully should find at least 2 options genuinely believable
-- Never repeat the same distractor pattern across questions
+━━━ DISTRACTOR RULES ━━━
+- Every wrong option must be a real concept from NCERT Class ${classLevel} Chemistry
+- Distractors must reflect common JEE/NEET misconceptions
+- Never use absurd options
+- At least 2 options should be genuinely tempting
 
 ━━━ OUTPUT FORMAT ━━━
-Return ONLY this exact JSON structure with no extra text:
+Return ONLY this JSON:
 {
-  "title": "engaging title for this passage (max 8 words)",
-  "passage": "full passage text here",
+  "title": "engaging title max 8 words",
+  "passage": "full passage text",
   "questions": [
     {
       "index": 0,
       "cognitiveLevel": "recall",
       "question": "question text",
-      "options": ["A. option text", "B. option text", "C. option text", "D. option text"],
+      "options": ["A. text", "B. text", "C. text", "D. text"],
       "correctIndex": 0,
-      "explanation": "explanation referencing the passage"
+      "explanation": "explanation referencing passage"
     }
   ]
 }`;
@@ -269,14 +234,12 @@ Return ONLY this exact JSON structure with no extra text:
         messages: [{ role: "user", content: userPrompt }],
       });
 
-      // Extract text content
       const rawContent = response.content[0];
       if (rawContent.type !== "text") {
-        throw new AppError(500, "Unexpected response type from Claude");
+        throw new AppError(500, "Unexpected response from Claude");
       }
 
-      // Parse JSON — strip any accidental markdown if present
-      const cleanedContent = rawContent.text
+      const cleaned = rawContent.text
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
         .trim();
@@ -295,12 +258,11 @@ Return ONLY this exact JSON structure with no extra text:
       };
 
       try {
-        parsed = JSON.parse(cleanedContent);
+        parsed = JSON.parse(cleaned);
       } catch {
         throw new AppError(500, "Claude returned invalid JSON — please retry");
       }
 
-      // Validate structure
       if (
         !parsed.title ||
         !parsed.passage ||
@@ -313,30 +275,18 @@ Return ONLY this exact JSON structure with no extra text:
         );
       }
 
-      // Find or create topic in Postgres
-      const topic = await prisma.topic.upsert({
-        where: {
-          name_subject_classLevel: {
-            name: topicName,
-            subject,
-            classLevel,
-          },
-        },
-        update: {},
-        create: { name: topicName, subject, classLevel },
-      });
-
       // Create session in Postgres
       const session = await prisma.session.create({
         data: {
           studentId,
-          topicId: topic.id,
-          neo4jTopicId: topicId, // topicId param is already the Neo4j id
+          subtopicId,
+          topicId: subtopicDef.topicId,
+          neo4jTopicId: subtopicDef.topicId,
           classLevel,
           passage: parsed.passage,
           questions: parsed.questions,
         },
-        include: { topic: true },
+        include: { subtopic: true },
       });
 
       return {
@@ -344,7 +294,14 @@ Return ONLY this exact JSON structure with no extra text:
         title: parsed.title,
         passage: parsed.passage,
         questions: parsed.questions,
-        topic: session.topic,
+        subtopic: {
+          id: session.subtopic.id,
+          name: session.subtopic.name,
+          order: session.subtopic.order,
+          topicId: session.subtopic.topicId,
+          classLevel: session.subtopic.classLevel,
+          subject: session.subtopic.subject,
+        },
       };
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -355,17 +312,12 @@ Return ONLY this exact JSON structure with no extra text:
     }
   },
 
-  // Fetch an existing session (so we don't regenerate on page refresh)
   async getSession(sessionId: string, studentId: string) {
     const session = await prisma.session.findFirst({
       where: { id: sessionId, studentId },
-      include: { topic: true },
+      include: { subtopic: true },
     });
-
-    if (!session) {
-      throw new AppError(404, "Session not found");
-    }
-
+    if (!session) throw new AppError(404, "Session not found");
     return session;
   },
 };

@@ -14,32 +14,58 @@ model Student {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions     Session[]
-  quizAttempts QuizAttempt[]
+  sessions         Session[]
+  quizAttempts     QuizAttempt[]
+  subtopicMasteries SubtopicMastery[]
 }
 
-model Topic {
-  id         String @id @default(cuid())
-  name       String
-  subject    String
-  classLevel Int
+// Static subtopic definition — mirrors src/data/subtopics.ts
+// Seeded once, never changes
+model Subtopic {
+  id                 String  @id  // e.g. 'c12_electrochemistry_s1'
+  topicId            String       // parent chapter neo4j id e.g. 'c12_electrochemistry'
+  name               String
+  order              Int
+  keyConceptsSummary String
+  classLevel         Int
+  subject            String
 
-  @@unique([name, subject, classLevel])
+  @@unique([topicId, order])
 
-  sessions Session[]
+  sessions          Session[]
+  masteryRecords    SubtopicMastery[]
+}
+
+// Per-student per-subtopic mastery tracking
+model SubtopicMastery {
+  id            String    @id @default(cuid())
+  studentId     String
+  subtopicId    String
+  mastery       Float     @default(0)
+  attempts      Int       @default(0)
+  isComplete    Boolean   @default(false)  // mastery >= 0.6 at least once
+  lastAttempted DateTime?
+  trend         String?   // 'improving' | 'declining' | 'stable'
+
+  student   Student  @relation(fields: [studentId], references: [id])
+  subtopic  Subtopic @relation(fields: [subtopicId], references: [id])
+
+  @@unique([studentId, subtopicId])
 }
 
 model Session {
-  id         String   @id @default(cuid())
-  studentId  String
-  topicId    String
-  classLevel Int
-  passage    String
-  questions  Json
-  createdAt  DateTime @default(now())
- neo4jTopicId String   // e.g. 'c9_fundamental_unit'
+  id           String   @id @default(cuid())
+  studentId    String
+  subtopicId   String   // which subtopic this session is for
+  topicId      String   // neo4j topic id (chapter level)
+  neo4jTopicId String   // same as topicId — keeping for compatibility
+  classLevel   Int
+  passage      String
+  questions    Json
+  createdAt    DateTime @default(now())
+
   student     Student      @relation(fields: [studentId], references: [id])
-  topic       Topic        @relation(fields: [topicId], references: [id])
+  subtopic    Subtopic     @relation(fields: [subtopicId], references: [id])
   quizAttempt QuizAttempt?
 }
 
