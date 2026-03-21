@@ -245,57 +245,32 @@ export const neo4jService = {
     studentId: string,
     subject: string,
     limit: number = 3,
-    maxClassLevel: number = 10,
+    classLevel: number = 12,
   ) {
     const driver = getDriver();
     const session = driver.session();
 
     try {
       const result = await session.run(
-        `// Only look at topics within the student's class level range
-       // Minimum class level is maxClassLevel - 1 to avoid recommending far below
-       MATCH (t:Topic {subject: $subject})
-       WHERE t.classLevel <= $maxClassLevel
-         AND t.classLevel >= $minClassLevel
-
-       // Get student's current mastery for this topic
+        `MATCH (t:Topic {subject: $subject, classLevel: $classLevel})
        OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(t)
-       WITH t, 
-            coalesce(k.mastery, 0.0) AS topicMastery, 
-            coalesce(k.attempts, 0) AS attempts
-
-       // Skip already mastered topics
-       WHERE topicMastery < 0.8
-
-       // Check prerequisites
-       OPTIONAL MATCH (t)-[:REQUIRES]->(prereq:Topic)
-       OPTIONAL MATCH (s2:Student {id: $studentId})-[kp:KNOWS]->(prereq)
-       WITH t, topicMastery, attempts,
-            collect(prereq) AS prereqs,
-            collect(coalesce(kp.mastery, 0.0)) AS prereqMasteries
-
-       // Topic is recommendable if:
-       // - It has no prerequisites (but must be at or above minClassLevel)
-       // - OR all prerequisites have mastery >= 0.5
-       WHERE (size(prereqs) = 0 AND t.classLevel >= $minClassLevel)
-          OR (size(prereqs) > 0 AND all(m IN prereqMasteries WHERE m >= 0.5))
-
+       WITH t,
+            coalesce(k.mastery, 0.0) AS mastery,
+            coalesce(k.attempts, 0)  AS attempts
+       WHERE mastery < 0.8
        RETURN
          t.id         AS id,
          t.name       AS name,
          t.classLevel AS classLevel,
-         topicMastery AS mastery,
-         attempts     AS attempts
-       ORDER BY 
-         t.classLevel DESC,  // prefer higher class levels first
-         topicMastery DESC   // prefer topics with some progress
+         mastery,
+         attempts
+       ORDER BY attempts DESC, mastery DESC
        LIMIT $limit`,
         {
           studentId,
           subject,
+          classLevel: neo4j.int(classLevel),
           limit: neo4j.int(limit),
-          maxClassLevel: neo4j.int(maxClassLevel),
-          minClassLevel: neo4j.int(Math.max(6, maxClassLevel - 1)),
         },
       );
 

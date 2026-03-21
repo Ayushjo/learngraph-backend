@@ -55,26 +55,21 @@ export const graphController = {
     try {
       const studentId = req.params.studentId as string;
       const subject = req.query.subject as string;
+      const classLevel = req.query.classLevel
+        ? parseInt(req.query.classLevel as string)
+        : 12;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 3;
-      const maxClassLevel = req.query.maxClassLevel
-        ? parseInt(req.query.maxClassLevel as string)
-        : 10;
 
-      if (!subject) {
-        throw new AppError(400, "subject query param is required");
-      }
+      if (!subject) throw new AppError(400, "subject is required");
 
       const recommendations = await neo4jService.getRecommendedTopics(
         studentId,
         subject,
         limit,
-        maxClassLevel,
+        classLevel,
       );
 
-      res.status(200).json({
-        success: true,
-        data: recommendations,
-      });
+      res.status(200).json({ success: true, data: recommendations });
     } catch (error) {
       next(error);
     }
