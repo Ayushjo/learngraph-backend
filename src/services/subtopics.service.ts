@@ -387,10 +387,72 @@ export const subtopicService = {
         (classLevel ? t.classLevel === classLevel : true),
     );
 
-    const results = await Promise.all(
-      topics.map((t) => this.getChapterProgress(studentId, t.id)),
-    );
+    // Single query — get ALL subtopic mastery records for this student
+    // across all chapters at once
+    const allMasteryRecords = await prisma.subtopicMastery.findMany({
+      where: {
+        studentId,
+        subtopic: {
+          subject,
+          ...(classLevel ? { classLevel } : {}),
+        },
+      },
+      include: { subtopic: true },
+    });
 
-    return results;
+    // Build mastery map for O(1) lookup
+    const masteryMap = new Map(allMasteryRecords.map((r) => [r.subtopicId, r]));
+
+    // Build progress for each topic without additional DB calls
+    return topics.map((topic) => {
+      const subtopics = topic.subtopics
+        .sort((a, b) => a.order - b.order)
+        .map((sub, index) => {
+          const record = masteryMap.get(sub.id);
+          const mastery = record?.mastery ?? 0;
+          const isComplete = record?.isComplete ?? false;
+          const attempts = record?.attempts ?? 0;
+
+          const isUnlocked =
+            index === 0
+              ? true
+              : (masteryMap.get(topic.subtopics[index - 1].id)?.isComplete ??
+                false);
+
+          return {
+            subtopicId: sub.id,
+            subtopicName: sub.name,
+            order: sub.order,
+            mastery,
+            attempts,
+            isComplete,
+            isUnlocked,
+            isCurrent: isUnlocked && !isComplete,
+            trend: record?.trend ?? null,
+            lastAttempted: record?.lastAttempted ?? null,
+          };
+        });
+
+      const chapterMastery =
+        subtopics.length > 0
+          ? subtopics.reduce((sum, s) => sum + s.mastery, 0) / subtopics.length
+          : 0;
+
+      const currentSubtopic = subtopics.find(
+        (s) => s.isUnlocked && !s.isComplete,
+      );
+
+      return {
+        topicId: topic.id,
+        topicName: topic.name,
+        classLevel: topic.classLevel,
+        subject: topic.subject,
+        totalSubtopics: subtopics.length,
+        completedSubtopics: subtopics.filter((s) => s.isComplete).length,
+        currentSubtopicId: currentSubtopic?.subtopicId ?? null,
+        chapterMastery: Math.round(chapterMastery * 10000) / 10000,
+        subtopics,
+      };
+    });
   },
 };
