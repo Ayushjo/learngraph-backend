@@ -133,6 +133,12 @@ export const contentService = {
     topicName: string,
     subject: string,
     classLevel: number,
+    studentContext?: {
+      previousAttempts: number;
+      previousMastery: number;
+      weakCognitiveLevels: string[];
+      prerequisiteGaps: string[];
+    },
   ) {
     // Validate classLevel
     if (classLevel < 6 || classLevel > 10) {
@@ -140,10 +146,26 @@ export const contentService = {
     }
 
     const profile = gradeProfiles[classLevel];
-
-const systemPrompt = `You are an expert Indian school science teacher and curriculum designer with 20 years of experience teaching NCERT Science from Class 6 to Class 10.
+    const isRetry = studentContext && studentContext.previousAttempts > 0;
+    const systemPrompt = `You are an expert Indian school science teacher and curriculum designer with 20 years of experience teaching NCERT Science from Class 6 to Class 10.
 
 Your job is to generate a reading passage and exactly 5 quiz questions for a student.
+
+${
+  isRetry
+    ? `
+⚠️ RETRY ATTEMPT — MANDATORY DIFFERENT CONTENT ⚠️
+Student has attempted this topic ${studentContext!.previousAttempts} time(s).
+Current mastery: ${Math.round(studentContext!.previousMastery * 100)}%.
+Weak areas: ${studentContext!.weakCognitiveLevels.join(", ") || "inference and application"}.
+Prerequisite gaps: ${studentContext!.prerequisiteGaps.join(", ") || "none"}.
+
+YOU MUST NOT generate content similar to a standard introductory passage.
+Choose an advanced angle, industrial application, exception, or interconnection with other topics.
+A student who read a typical first passage on this topic should encounter genuinely new information.
+`
+    : ""
+}
 
 You have a deep understanding of:
 - The exact NCERT Science curriculum for each class from 6 to 10
@@ -160,9 +182,26 @@ CRITICAL RULES YOU MUST NEVER BREAK:
 5. The explanation must reference the exact part of the passage that contains the answer
 6. Output ONLY valid JSON — no markdown, no backticks, no preamble, no extra text whatsoever
 7. The passage must follow Indian context — use Indian examples, Indian names, Indian scenarios where possible`;
+    const contextSection =
+      studentContext && studentContext.previousAttempts > 0
+        ? `
+━━━ STUDENT LEARNING HISTORY — READ THIS FIRST ━━━
+ATTEMPTS ON THIS TOPIC: ${studentContext.previousAttempts}
+CURRENT MASTERY: ${Math.round(studentContext.previousMastery * 100)}%
+STRUGGLED WITH QUESTION TYPES: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "none identified"}
+PREREQUISITE GAPS: ${studentContext.prerequisiteGaps.length > 0 ? studentContext.prerequisiteGaps.join(", ") : "none"}
 
-const userPrompt = `Generate a reading passage and 5 quiz questions for the following:
-
+MANDATORY INSTRUCTIONS FOR RETRY:
+— Pick a subtopic or application of ${topicName} that is NOT typically covered in a first introduction
+— For Acids Bases and Salts examples: first attempt covers neutralisation basics → retry should cover indicators, salt hydrolysis, or buffer action
+— Use completely different Indian scenarios, names, and real-world examples
+— The passage MUST NOT feel like a restatement of basic definitions
+— Weight your questions heavily toward: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "inference and application"}
+— Make inference and application questions more challenging than standard
+`
+        : "";
+    const userPrompt = `Generate a reading passage and 5 quiz questions for the following:
+${contextSection}
 TOPIC: ${topicName}
 SUBJECT: ${subject}
 CLASS LEVEL: Class ${classLevel}

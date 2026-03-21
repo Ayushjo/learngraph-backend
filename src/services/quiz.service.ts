@@ -82,6 +82,84 @@ const getResultMessage = (
 };
 
 // ─── Service ──────────────────────────────────────────────────────────────────
+const getStudentTopicContext = async (
+  studentId: string,
+  neo4jTopicId: string,
+  sessionId: string,
+): Promise<{
+  previousAttempts: number;
+  previousMastery: number;
+  weakCognitiveLevels: string[];
+  prerequisiteGaps: string[];
+}> => {
+  // Get previous quiz attempts for this topic
+  const previousAttempts = await prisma.quizAttempt.findMany({
+    where: {
+      studentId,
+      session: { neo4jTopicId },
+      NOT: { sessionId }, // exclude current session
+    },
+    include: { session: true },
+    orderBy: { createdAt: "desc" },
+    take: 3,
+  });
+
+  // Find weak cognitive levels from previous attempts
+  const weakCognitiveLevels: string[] = [];
+  if (previousAttempts.length > 0) {
+    const allAnswers = previousAttempts.flatMap(
+      (a) => a.answers as Array<{ cognitiveLevel: string; isCorrect: boolean }>,
+    );
+    const cogLevelStats: Record<string, { correct: number; total: number }> =
+      {};
+    for (const answer of allAnswers) {
+      if (!cogLevelStats[answer.cognitiveLevel]) {
+        cogLevelStats[answer.cognitiveLevel] = { correct: 0, total: 0 };
+      }
+      cogLevelStats[answer.cognitiveLevel].total++;
+      if (answer.isCorrect) cogLevelStats[answer.cognitiveLevel].correct++;
+    }
+    for (const [level, stats] of Object.entries(cogLevelStats)) {
+      if (stats.correct / stats.total < 0.5) weakCognitiveLevels.push(level);
+    }
+  }
+
+  // Get prerequisite gaps from Neo4j
+  const { getDriver } = await import("../db/neo4j");
+  const driver = getDriver();
+  const neo4jSession = driver.session();
+  const prereqGaps: string[] = [];
+
+  try {
+    const gapResult = await neo4jSession.run(
+      `MATCH (t:Topic {id: $topicId})-[:REQUIRES]->(prereq:Topic)
+       OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(prereq)
+       WITH prereq, coalesce(k.mastery, 0.0) AS prereqMastery
+       WHERE prereqMastery < 0.5
+       RETURN prereq.name AS name`,
+      { topicId: neo4jTopicId, studentId },
+    );
+    for (const record of gapResult.records) {
+      prereqGaps.push(record.get("name") as string);
+    }
+  } finally {
+    await neo4jSession.close();
+  }
+
+  // Get current mastery
+  const { masteryService } = await import("./mastery.service");
+  const topicMastery = await masteryService.getTopicMastery(
+    studentId,
+    neo4jTopicId,
+  );
+
+  return {
+    previousAttempts: previousAttempts.length,
+    previousMastery: topicMastery.mastery,
+    weakCognitiveLevels,
+    prerequisiteGaps: prereqGaps,
+  };
+};
 
 export const quizService = {
   async submitQuiz(input: SubmitQuizInput): Promise<QuizSubmitResult> {
