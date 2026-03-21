@@ -160,10 +160,7 @@ export const quizService = {
     // We use the Neo4j topic id (from our seed) not the Postgres topic id
     // The session stores topicId as Postgres cuid — we need the Neo4j id
     // So we use topic name + classLevel to find the Neo4j node id
-    const neo4jTopicId = await resolveNeo4jTopicId(
-      session.topic.name,
-      session.topic.classLevel,
-    );
+    const neo4jTopicId = session.neo4jTopicId;
 
     const masteryResult = await masteryService.updateMastery({
       studentId,
@@ -218,34 +215,3 @@ export const quizService = {
   },
 };
 
-// ─── Helper: Resolve Neo4j topic id from name + classLevel ───────────────────
-// Neo4j uses our seeded string ids (e.g. 'c9_fundamental_unit')
-// Postgres uses cuid — we bridge them via topic name + classLevel
-
-const resolveNeo4jTopicId = async (
-  topicName: string,
-  classLevel: number,
-): Promise<string> => {
-  const { getDriver } = await import("../db/neo4j");
-  const driver = getDriver();
-  const session = driver.session();
-
-  try {
-    const result = await session.run(
-      `MATCH (t:Topic {name: $name, classLevel: $classLevel})
-       RETURN t.id AS id`,
-      { name: topicName, classLevel },
-    );
-
-    if (result.records.length === 0) {
-      throw new AppError(
-        404,
-        `Topic "${topicName}" not found in knowledge graph`,
-      );
-    }
-
-    return result.records[0].get("id") as string;
-  } finally {
-    await session.close();
-  }
-};

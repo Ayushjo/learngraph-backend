@@ -37,7 +37,7 @@ model Session {
   passage    String
   questions  Json
   createdAt  DateTime @default(now())
-
+ neo4jTopicId String   // e.g. 'c9_fundamental_unit'
   student     Student      @relation(fields: [studentId], references: [id])
   topic       Topic        @relation(fields: [topicId], references: [id])
   quizAttempt QuizAttempt?

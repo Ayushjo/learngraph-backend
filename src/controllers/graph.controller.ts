@@ -56,6 +56,9 @@ export const graphController = {
       const studentId = req.params.studentId as string;
       const subject = req.query.subject as string;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 3;
+      const maxClassLevel = req.query.maxClassLevel
+        ? parseInt(req.query.maxClassLevel as string)
+        : 10;
 
       if (!subject) {
         throw new AppError(400, "subject query param is required");
@@ -65,6 +68,7 @@ export const graphController = {
         studentId,
         subject,
         limit,
+        maxClassLevel,
       );
 
       res.status(200).json({

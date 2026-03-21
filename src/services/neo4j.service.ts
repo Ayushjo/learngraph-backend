@@ -245,42 +245,43 @@ export const neo4jService = {
     studentId: string,
     subject: string,
     limit: number = 3,
+    maxClassLevel?: number, // only recommend up to this class
   ) {
     const driver = getDriver();
     const session = driver.session();
 
     try {
-      // Find topics where:
-      // 1. Student has not mastered them yet (mastery < 0.8)
-      // 2. All prerequisites have mastery >= 0.5
       const result = await session.run(
         `MATCH (t:Topic {subject: $subject})
-         OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(t)
-         WITH t, coalesce(k.mastery, 0.0) AS topicMastery, coalesce(k.attempts, 0) AS attempts
+       WHERE t.classLevel <= $maxClassLevel
+       OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(t)
+       WITH t, coalesce(k.mastery, 0.0) AS topicMastery, coalesce(k.attempts, 0) AS attempts
 
-         // Only topics not yet mastered
-         WHERE topicMastery < 0.8
+       WHERE topicMastery < 0.8
 
-         // Check all prerequisites are sufficiently mastered
-         OPTIONAL MATCH (t)-[:REQUIRES]->(prereq:Topic)
-         OPTIONAL MATCH (s2:Student {id: $studentId})-[kp:KNOWS]->(prereq)
-         WITH t, topicMastery, attempts,
-              collect(prereq) AS prereqs,
-              collect(coalesce(kp.mastery, 0.0)) AS prereqMasteries
+       OPTIONAL MATCH (t)-[:REQUIRES]->(prereq:Topic)
+       OPTIONAL MATCH (s2:Student {id: $studentId})-[kp:KNOWS]->(prereq)
+       WITH t, topicMastery, attempts,
+            collect(prereq) AS prereqs,
+            collect(coalesce(kp.mastery, 0.0)) AS prereqMasteries
 
-         // Either no prerequisites OR all prerequisites mastery >= 0.5
-         WHERE size(prereqs) = 0
-            OR all(m IN prereqMasteries WHERE m >= 0.5)
+       WHERE size(prereqs) = 0
+          OR all(m IN prereqMasteries WHERE m >= 0.5)
 
-         RETURN
-           t.id          AS id,
-           t.name        AS name,
-           t.classLevel  AS classLevel,
-           topicMastery  AS mastery,
-           attempts      AS attempts
-         ORDER BY t.classLevel ASC, topicMastery DESC
-         LIMIT $limit`,
-        { studentId, subject, limit: neo4j.int(limit) },
+       RETURN
+         t.id          AS id,
+         t.name        AS name,
+         t.classLevel  AS classLevel,
+         topicMastery  AS mastery,
+         attempts      AS attempts
+       ORDER BY t.classLevel ASC, topicMastery DESC
+       LIMIT $limit`,
+        {
+          studentId,
+          subject,
+          limit: neo4j.int(limit),
+          maxClassLevel: neo4j.int(maxClassLevel ?? 10),
+        },
       );
 
       return result.records.map((r) => ({

@@ -292,6 +292,7 @@ Return ONLY this exact JSON structure with no extra text:
         data: {
           studentId,
           topicId: topic.id,
+          neo4jTopicId: topicId, // topicId param is already the Neo4j id
           classLevel,
           passage: parsed.passage,
           questions: parsed.questions,
