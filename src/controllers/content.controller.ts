@@ -22,16 +22,18 @@ export const contentController = {
         orderBy: { createdAt: "desc" },
       });
       // Get the actual wrong questions from last attempt
-      
-      const wrongQuestions = (
-        previousSession?.quizAttempt?.answers as Array<{
-          cognitiveLevel: string;
-          isCorrect: boolean;
-          question: string;
-        }>
-      )
-        .filter((a) => !a.isCorrect)
-        .map((a) => a.cognitiveLevel);
+
+      const wrongQuestions = previousSession?.quizAttempt
+        ? (
+            previousSession.quizAttempt.answers as Array<{
+              cognitiveLevel: string;
+              isCorrect: boolean;
+              question: string;
+            }>
+          )
+            .filter((a) => !a.isCorrect)
+            .map((a) => a.cognitiveLevel)
+        : [];
       let studentContext;
       if (previousSession?.quizAttempt) {
         // Student has attempted this topic — build context
