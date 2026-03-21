@@ -5,11 +5,30 @@ export const studentService = {
   // Get or create a student by name
   // This is our "auth" — student types their name, we find or create them
   async findOrCreate(name: string) {
-    if (!name || name.trim().length < 2) {
+    if (!name || typeof name !== "string") {
+      throw new AppError(400, "Name is required");
+    }
+
+    // Strip HTML tags, trim whitespace
+    const sanitized = name.replace(/<[^>]*>/g, "").trim();
+
+    if (sanitized.length < 2) {
       throw new AppError(400, "Name must be at least 2 characters");
     }
 
-    const normalizedName = name.trim().toLowerCase();
+    if (sanitized.length > 50) {
+      throw new AppError(400, "Name must be under 50 characters");
+    }
+
+    // Only allow letters, spaces, dots, hyphens
+    if (!/^[a-zA-Z\s.\-']+$/.test(sanitized)) {
+      throw new AppError(
+        400,
+        "Name can only contain letters, spaces, and basic punctuation",
+      );
+    }
+
+    const normalizedName = sanitized.toLowerCase();
 
     const student = await prisma.student.upsert({
       where: { name: normalizedName },

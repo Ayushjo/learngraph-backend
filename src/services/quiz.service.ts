@@ -213,5 +213,22 @@ export const quizService = {
 
     return attempt;
   },
+
+  // New method — check if session has attempt
+  async getSessionWithAttempt(sessionId: string, studentId: string) {
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, studentId },
+      include: {
+        topic: true,
+        quizAttempt: true,
+      },
+    });
+
+    if (!session) {
+      throw new AppError(404, "Session not found");
+    }
+
+    return session;
+  },
 };
 
