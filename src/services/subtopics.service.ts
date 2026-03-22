@@ -293,6 +293,14 @@ export const subtopicService = {
     weakCognitiveLevels: string[];
     prerequisiteGaps: string[];
     completedSubtopicsInChapter: string[];
+    wrongQuestions: Array<{
+      questionText: string;
+      chosenAnswer: string;
+      correctAnswer: string;
+      explanation: string;
+      cognitiveLevel: string;
+    }>;
+    lastScorePercentage: number;
   }> {
     const subtopic = await prisma.subtopic.findUnique({
       where: { id: subtopicId },
@@ -313,25 +321,92 @@ export const subtopicService = {
     });
 
     const weakCognitiveLevels: string[] = [];
+    const wrongQuestions: Array<{
+      questionText: string;
+      chosenAnswer: string;
+      correctAnswer: string;
+      explanation: string;
+      cognitiveLevel: string;
+    }> = [];
+    let lastScorePercentage = 0;
+
     if (previousSessions.length > 0) {
-      const allAnswers = previousSessions.flatMap(
-        (s) =>
-          (s.quizAttempt?.answers as Array<{
+      // Build cognitive level stats across all previous attempts
+      const cogStats: Record<string, { correct: number; total: number }> = {};
+
+      for (const session of previousSessions) {
+        const answers =
+          (session.quizAttempt?.answers as Array<{
             cognitiveLevel: string;
             isCorrect: boolean;
-          }>) ?? [],
-      );
+            chosen: number;
+            correct: number;
+            question: string;
+            explanation: string;
+          }>) ?? [];
 
-      const cogStats: Record<string, { correct: number; total: number }> = {};
-      for (const a of allAnswers) {
-        if (!cogStats[a.cognitiveLevel])
-          cogStats[a.cognitiveLevel] = { correct: 0, total: 0 };
-        cogStats[a.cognitiveLevel].total++;
-        if (a.isCorrect) cogStats[a.cognitiveLevel].correct++;
+        const questions =
+          (session.questions as Array<{
+            cognitiveLevel: string;
+            question: string;
+            options: string[];
+            correctIndex: number;
+            explanation: string;
+          }>) ?? [];
+
+        for (const a of answers) {
+          if (!cogStats[a.cognitiveLevel])
+            cogStats[a.cognitiveLevel] = { correct: 0, total: 0 };
+          cogStats[a.cognitiveLevel].total++;
+          if (a.isCorrect) cogStats[a.cognitiveLevel].correct++;
+        }
       }
 
+      // Determine weak cognitive levels (< 50% correct)
       for (const [level, stats] of Object.entries(cogStats)) {
         if (stats.correct / stats.total < 0.5) weakCognitiveLevels.push(level);
+      }
+
+      // Extract wrong questions from the MOST RECENT session only
+      // (most recent = index 0 since we order by createdAt desc)
+      const lastSession = previousSessions[0];
+      if (lastSession?.quizAttempt) {
+        const answers =
+          (lastSession.quizAttempt.answers as Array<{
+            cognitiveLevel: string;
+            isCorrect: boolean;
+            chosen: number;
+            correct: number;
+          }>) ?? [];
+
+        const questions =
+          (lastSession.questions as Array<{
+            cognitiveLevel: string;
+            question: string;
+            options: string[];
+            correctIndex: number;
+            explanation: string;
+          }>) ?? [];
+
+        // Calculate last score percentage
+        const correctCount = answers.filter((a) => a.isCorrect).length;
+        lastScorePercentage = Math.round((correctCount / answers.length) * 100);
+
+        // Collect wrong questions with full context
+        for (let i = 0; i < answers.length; i++) {
+          const answer = answers[i];
+          const question = questions[i];
+          if (!answer.isCorrect && question) {
+            wrongQuestions.push({
+              questionText: question.question,
+              chosenAnswer: question.options[answer.chosen] ?? "Unknown",
+              correctAnswer:
+                question.options[question.correctIndex] ?? "Unknown",
+              explanation: question.explanation,
+              cognitiveLevel: answer.cognitiveLevel,
+            });
+          }
+        }
       }
     }
 
@@ -372,6 +447,8 @@ export const subtopicService = {
       weakCognitiveLevels,
       prerequisiteGaps: prereqGaps,
       completedSubtopicsInChapter,
+      wrongQuestions,
+      lastScorePercentage,
     };
   },
 

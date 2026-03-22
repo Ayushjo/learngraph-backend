@@ -88,6 +88,14 @@ export const contentService = {
       weakCognitiveLevels: string[];
       prerequisiteGaps: string[];
       completedSubtopicsInChapter: string[];
+      wrongQuestions: Array<{
+        questionText: string;
+        chosenAnswer: string;
+        correctAnswer: string;
+        explanation: string;
+        cognitiveLevel: string;
+      }>;
+      lastScorePercentage: number;
     },
   ) {
     // Get subtopic definition
@@ -126,8 +134,10 @@ Prerequisite gaps: ${studentContext.prerequisiteGaps.join(", ") || "none"}.
 YOU MUST generate a passage that:
 1. Approaches the SAME subtopic from a completely different angle or application
 2. Uses different Indian examples and scenarios than a standard first attempt
-3. Focuses heavily on the weak question types listed above
+3. Focuses heavily on the weak question types: ${studentContext.weakCognitiveLevels.join(", ") || "inference and application"}
 4. Does NOT repeat the standard textbook introduction to this subtopic
+5. ${studentContext.lastScorePercentage >= 80 ? "Increases difficulty — student scored well, they need harder questions" : studentContext.lastScorePercentage >= 60 ? "Slightly increases difficulty — student is progressing" : "Addresses specific misconceptions from last attempt — student is struggling"}
+${studentContext.wrongQuestions.length > 0 ? `6. Directly addresses these misconceptions: ${studentContext.wrongQuestions.map((q) => `"${q.chosenAnswer}" (wrong) vs "${q.correctAnswer}" (correct)`).join("; ")}` : ""}
 `
     : ""
 }
@@ -149,16 +159,53 @@ You may reference these briefly as prior knowledge but do not teach them again.
 `
         : "";
 
+    const difficultyInstruction = isRetry
+      ? studentContext.lastScorePercentage >= 80
+        ? "Student scored well last time. INCREASE difficulty significantly — fewer recall questions, more multi-step inference and application questions. Assume student knows the basics."
+        : studentContext.lastScorePercentage >= 60
+          ? "Student is developing. Generate questions at slightly higher difficulty — more cause_and_effect and inference, fewer recall questions."
+          : "Student is struggling. Keep similar difficulty but use completely different examples and scenarios to help them see the concept from a new angle."
+      : "";
+
+    const wrongQuestionsContext =
+      isRetry && studentContext.wrongQuestions.length > 0
+        ? `
+━━━ SPECIFIC MISCONCEPTIONS FROM LAST ATTEMPT ━━━
+The student got these questions wrong. Your passage and questions MUST address these misconceptions directly:
+
+${studentContext.wrongQuestions
+  .map(
+    (q, i) => `
+MISCONCEPTION ${i + 1} [${q.cognitiveLevel}]:
+Question: "${q.questionText}"
+Student chose: "${q.chosenAnswer}"
+Correct answer: "${q.correctAnswer}"
+Why it matters: ${q.explanation}
+`,
+  )
+  .join("")}
+
+MANDATORY INSTRUCTIONS:
+1. Your passage must contain content that would help a student NOT make these exact mistakes
+2. Generate at least ${Math.min(studentContext.wrongQuestions.length, 2)} questions that test the same concepts as the wrong questions above, but worded differently
+3. The student who chose the wrong answers above has a specific misconception — address it directly in the passage
+`
+        : "";
+
     const retryContext = isRetry
       ? `
 ━━━ STUDENT LEARNING HISTORY ━━━
 Previous attempts: ${studentContext.previousAttempts}
 Current mastery: ${Math.round(studentContext.previousMastery * 100)}%
-Struggling with: ${studentContext.weakCognitiveLevels.join(", ") || "none identified"}
+Last attempt score: ${studentContext.lastScorePercentage}%
+Struggling with question types: ${studentContext.weakCognitiveLevels.join(", ") || "none identified"}
 Prerequisite gaps: ${studentContext.prerequisiteGaps.join(", ") || "none"}
 
+DIFFICULTY INSTRUCTION: ${difficultyInstruction}
+
 MANDATORY: Choose a different angle, application, or example set than a standard introduction.
-Weight your questions heavily toward: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "inference and application"}
+Weight your questions toward: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "inference and application"}
+${wrongQuestionsContext}
 `
       : "";
 
