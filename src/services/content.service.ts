@@ -87,6 +87,12 @@ export const contentService = {
       previousMastery: number;
       weakCognitiveLevels: string[];
       prerequisiteGaps: string[];
+      prerequisiteMasteries: Array<{
+        name: string;
+        topicId: string;
+        mastery: number;
+        attempts: number;
+      }>;
       completedSubtopicsInChapter: string[];
       wrongQuestions: Array<{
         questionText: string;
@@ -192,6 +198,31 @@ MANDATORY INSTRUCTIONS:
 `
         : "";
 
+    const prereqMasteryContext =
+      studentContext.prerequisiteMasteries.length > 0
+        ? `
+PREREQUISITE CHAPTER MASTERY (from student's knowledge graph):
+${studentContext.prerequisiteMasteries
+  .map((p) => {
+    const status =
+      p.attempts === 0
+        ? "⚠️ NEVER ATTEMPTED"
+        : p.mastery < 0.4
+          ? `🔴 STRUGGLING (${Math.round(p.mastery * 100)}%)`
+          : p.mastery < 0.6
+            ? `🟡 DEVELOPING (${Math.round(p.mastery * 100)}%)`
+            : `🟢 GOOD (${Math.round(p.mastery * 100)}%)`;
+    return `  - ${p.name}: ${status}`;
+  })
+  .join("\n")}
+
+${
+  studentContext.prerequisiteGaps.length > 0
+    ? `⚠️ WEAK PREREQUISITES: The student has gaps in ${studentContext.prerequisiteGaps.join(", ")}. Your passage MUST briefly reinforce the core connecting concept from the weakest prerequisite before diving deep into ${subtopicName}. Weave it naturally.`
+    : "✅ Prerequisites are adequately mastered — go full depth on this subtopic."
+}`
+        : "";
+
     const retryContext = isRetry
       ? `
 ━━━ STUDENT LEARNING HISTORY ━━━
@@ -199,7 +230,7 @@ Previous attempts: ${studentContext.previousAttempts}
 Current mastery: ${Math.round(studentContext.previousMastery * 100)}%
 Last attempt score: ${studentContext.lastScorePercentage}%
 Struggling with question types: ${studentContext.weakCognitiveLevels.join(", ") || "none identified"}
-Prerequisite gaps: ${studentContext.prerequisiteGaps.join(", ") || "none"}
+${prereqMasteryContext}
 
 DIFFICULTY INSTRUCTION: ${difficultyInstruction}
 
@@ -207,7 +238,12 @@ MANDATORY: Choose a different angle, application, or example set than a standard
 Weight your questions toward: ${studentContext.weakCognitiveLevels.length > 0 ? studentContext.weakCognitiveLevels.join(", ") : "inference and application"}
 ${wrongQuestionsContext}
 `
-      : "";
+      : prereqMasteryContext
+        ? `
+━━━ STUDENT KNOWLEDGE GRAPH STATE ━━━
+${prereqMasteryContext}
+`
+        : "";
 
     const userPrompt = `Generate a reading passage and 5 quiz questions for:
 
