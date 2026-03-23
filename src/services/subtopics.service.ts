@@ -292,6 +292,12 @@ export const subtopicService = {
     previousMastery: number;
     weakCognitiveLevels: string[];
     prerequisiteGaps: string[];
+    prerequisiteMasteries: Array<{
+      name: string;
+      topicId: string;
+      mastery: number;
+      attempts: number;
+    }>;
     completedSubtopicsInChapter: string[];
     wrongQuestions: Array<{
       questionText: string;
@@ -424,19 +430,39 @@ export const subtopicService = {
     );
 
     // Get prerequisite gaps from Neo4j (chapter level)
+    // Get prerequisite gaps from Neo4j WITH mastery scores
     const driver = getDriver();
     const neo4jSession = driver.session();
     const prereqGaps: string[] = [];
+    const prereqMasteries: Array<{
+      name: string;
+      topicId: string;
+      mastery: number;
+      attempts: number;
+    }> = [];
+
     try {
       const result = await neo4jSession.run(
         `MATCH (t:Topic {id: $topicId})-[:REQUIRES]->(prereq:Topic)
          OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(prereq)
-         WITH prereq, coalesce(k.mastery, 0.0) AS m
-         WHERE m < 0.5
-         RETURN prereq.name AS name`,
+         WITH prereq,
+              coalesce(k.mastery, 0.0) AS m,
+              coalesce(k.attempts, 0) AS a
+         RETURN prereq.name AS name, prereq.id AS id, m AS mastery, a AS attempts
+         ORDER BY m ASC`,
         { topicId: subtopic.topicId, studentId },
       );
-      for (const r of result.records) prereqGaps.push(r.get("name") as string);
+      for (const r of result.records) {
+        const mastery = Number(r.get("mastery"));
+        const attempts = Number(r.get("attempts"));
+        prereqMasteries.push({
+          name: r.get("name") as string,
+          topicId: r.get("id") as string,
+          mastery,
+          attempts,
+        });
+        if (mastery < 0.5) prereqGaps.push(r.get("name") as string);
+      }
     } finally {
       await neo4jSession.close();
     }
@@ -446,6 +472,7 @@ export const subtopicService = {
       previousMastery: masteryRecord?.mastery ?? 0,
       weakCognitiveLevels,
       prerequisiteGaps: prereqGaps,
+      prerequisiteMasteries: prereqMasteries,
       completedSubtopicsInChapter,
       wrongQuestions,
       lastScorePercentage,
