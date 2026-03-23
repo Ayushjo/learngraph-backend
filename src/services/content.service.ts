@@ -78,6 +78,50 @@ const questionTypes = [
   },
 ];
 
+const getBloomsDistribution = (mastery: number, attempts: number): string => {
+  if (attempts === 0 || mastery < 0.3) {
+    return `BLOOM'S QUESTION DISTRIBUTION FOR THIS STUDENT (mastery: ${Math.round(mastery * 100)}%):
+Student is at foundational level. Weight toward easier question types:
+- Q1: recall (easiest — build confidence)
+- Q2: vocabulary (reinforce key terms)
+- Q3: cause_and_effect (one step reasoning only)
+- Q4: cause_and_effect (different angle, still accessible)
+- Q5: application (one simple real scenario)
+Avoid tricky inference. Student needs confidence first.`;
+  }
+
+  if (mastery < 0.6) {
+    return `BLOOM'S QUESTION DISTRIBUTION FOR THIS STUDENT (mastery: ${Math.round(mastery * 100)}%):
+Student is developing. Use balanced distribution:
+- Q1: recall
+- Q2: vocabulary
+- Q3: cause_and_effect
+- Q4: inference (push slightly)
+- Q5: application (moderate scenario)
+Standard difficulty — push gently on inference and application.`;
+  }
+
+  if (mastery < 0.8) {
+    return `BLOOM'S QUESTION DISTRIBUTION FOR THIS STUDENT (mastery: ${Math.round(mastery * 100)}%):
+Student has good mastery. Weight toward higher order thinking:
+- Q1: recall (keep easy)
+- Q2: cause_and_effect (skip easy vocabulary)
+- Q3: inference (must require real reasoning)
+- Q4: inference (different angle)
+- Q5: application (complex multi-step scenario)
+Make inference and application questions genuinely challenging.`;
+  }
+
+  return `BLOOM'S QUESTION DISTRIBUTION FOR THIS STUDENT (mastery: ${Math.round(mastery * 100)}%):
+Student has high mastery. Push hard on higher order thinking:
+- Q1: recall (just one easy one)
+- Q2: inference (non-obvious)
+- Q3: inference (harder, different angle)
+- Q4: application (complex real scenario)
+- Q5: application (edge case or exception)
+This student should be challenged. Easy questions waste their time.`;
+};
+
 export const contentService = {
   async generatePassageAndQuestions(
     studentId: string,
@@ -244,6 +288,23 @@ ${wrongQuestionsContext}
 ${prereqMasteryContext}
 `
         : "";
+    const weakestPrereq = studentContext.prerequisiteMasteries
+      .filter((p) => p.attempts === 0 || p.mastery < 0.5)
+      .sort((a, b) => a.mastery - b.mastery)[0];
+
+    const prereqReinforcementInstruction = weakestPrereq
+      ? `
+━━━ PREREQUISITE REINFORCEMENT — MANDATORY ━━━
+The student's weakest prerequisite is: "${weakestPrereq.name}"
+Status: ${weakestPrereq.attempts === 0 ? "NEVER ATTEMPTED" : `mastery ${Math.round(weakestPrereq.mastery * 100)}%`}
+
+YOU MUST do two things:
+1. In the passage — weave in one sentence that connects a concept from "${weakestPrereq.name}" to ${subtopicName}. Make it natural, not forced.
+2. Replace Q3 with a question that tests the connecting concept between "${weakestPrereq.name}" and ${subtopicName}. This question must still be answerable from the passage. Set its cognitiveLevel to "prerequisite_review".
+
+This is the knowledge graph actively personalizing learning for this student.
+`
+      : "";
 
     const userPrompt = `Generate a reading passage and 5 quiz questions for:
 
@@ -276,9 +337,24 @@ Context: ${profile.examContext}
   5. Bridge to next (1 sentence): how mastering this subtopic connects to the next concept in the chapter
 - Every example must be Indian — Indian industries, Indian scientists where relevant, Indian daily life
 - Terminology must match NCERT Class ${classLevel} exactly
-
+${prereqReinforcementInstruction}
 ━━━ QUESTION REQUIREMENTS ━━━
-${questionTypes.map((qt, i) => `Q${i + 1} — ${qt.level.toUpperCase()}: ${qt.instruction}`).join("\n")}
+${getBloomsDistribution(
+  studentContext.previousAttempts === 0 &&
+    studentContext.prerequisiteMasteries.length > 0
+    ? studentContext.prerequisiteMasteries.reduce(
+        (sum, p) => sum + p.mastery,
+        0,
+      ) / studentContext.prerequisiteMasteries.length
+    : studentContext.previousMastery,
+  studentContext.previousAttempts === 0 &&
+    studentContext.prerequisiteMasteries.length > 0
+    ? studentContext.prerequisiteMasteries.filter((p) => p.attempts > 0).length
+    : studentContext.previousAttempts,
+)}
+
+Follow this distribution when choosing cognitive levels. The question type descriptions:
+${questionTypes.map((qt, i) => `${qt.level.toUpperCase()}: ${qt.instruction}`).join("\n")}
 
 Each question:
 - 4 options (A, B, C, D)
