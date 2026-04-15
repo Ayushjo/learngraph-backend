@@ -5,7 +5,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
- 
 }
 
 model Student {
@@ -14,16 +13,15 @@ model Student {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions         Session[]
-  quizAttempts     QuizAttempt[]
+  sessions          Session[]
+  quizAttempts      QuizAttempt[]
   subtopicMasteries SubtopicMastery[]
+  conceptMasteries  ConceptMastery[]
 }
 
-// Static subtopic definition — mirrors src/data/subtopics.ts
-// Seeded once, never changes
 model Subtopic {
-  id                 String  @id  // e.g. 'c12_electrochemistry_s1'
-  topicId            String       // parent chapter neo4j id e.g. 'c12_electrochemistry'
+  id                 String @id
+  topicId            String
   name               String
   order              Int
   keyConceptsSummary String
@@ -32,23 +30,63 @@ model Subtopic {
 
   @@unique([topicId, order])
 
-  sessions          Session[]
-  masteryRecords    SubtopicMastery[]
+  sessions       Session[]
+  masteryRecords SubtopicMastery[]
+  concepts       Concept[]
 }
 
-// Per-student per-subtopic mastery tracking
+model Concept {
+  id         String @id
+  subtopicId String
+  name       String
+  tag        String
+
+  subtopic         Subtopic         @relation(fields: [subtopicId], references: [id])
+  conceptMasteries ConceptMastery[]
+
+  @@unique([subtopicId, tag])
+}
+
+model ConceptMastery {
+  id        String @id @default(cuid())
+  studentId String
+  conceptId String
+
+  mastery            Float    @default(0)
+  lastScore          Float    @default(0)
+  previousScore      Float    @default(0)
+  velocity           Float    @default(0)
+  scoreVariance      Float    @default(0)
+  consecutiveCorrect Int      @default(0)
+  consecutiveWrong   Int      @default(0)
+  attempts           Int      @default(0)
+  lastAttempted      DateTime?
+  retentionScore     Float    @default(1.0)
+  halfLifeDays       Float    @default(1.0)
+  recallScore        Float    @default(0)
+  vocabularyScore    Float    @default(0)
+  causeEffectScore   Float    @default(0)
+  inferenceScore     Float    @default(0)
+  applicationScore   Float    @default(0)
+
+  student Student @relation(fields: [studentId], references: [id])
+  concept Concept @relation(fields: [conceptId], references: [id])
+
+  @@unique([studentId, conceptId])
+}
+
 model SubtopicMastery {
   id            String    @id @default(cuid())
   studentId     String
   subtopicId    String
   mastery       Float     @default(0)
   attempts      Int       @default(0)
-  isComplete    Boolean   @default(false)  // mastery >= 0.6 at least once
+  isComplete    Boolean   @default(false)
   lastAttempted DateTime?
-  trend         String?   // 'improving' | 'declining' | 'stable'
+  trend         String?
 
-  student   Student  @relation(fields: [studentId], references: [id])
-  subtopic  Subtopic @relation(fields: [subtopicId], references: [id])
+  student  Student  @relation(fields: [studentId], references: [id])
+  subtopic Subtopic @relation(fields: [subtopicId], references: [id])
 
   @@unique([studentId, subtopicId])
 }
@@ -56,12 +94,18 @@ model SubtopicMastery {
 model Session {
   id           String   @id @default(cuid())
   studentId    String
-  subtopicId   String   // which subtopic this session is for
-  topicId      String   // neo4j topic id (chapter level)
-  neo4jTopicId String   // same as topicId — keeping for compatibility
+  subtopicId   String
+  topicId      String
+  neo4jTopicId String
   classLevel   Int
   passage      String
   questions    Json
+  questionPool   Json   @default("[]")
+  shownQuestions Json   @default("[]")
+  pendingRetries Json   @default("[]")
+  sessionStatus  String @default("active")
+  totalShown     Int    @default(0)
+  totalCorrect   Int    @default(0)
   createdAt    DateTime @default(now())
 
   student     Student      @relation(fields: [studentId], references: [id])
