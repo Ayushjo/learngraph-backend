@@ -10,7 +10,7 @@ const prisma = new PrismaClient({ adapter });
 const seed = async () => {
   console.log("🌱 Seeding Postgres subtopics...");
 
-  let count = 0;
+  let subtopicCount = 0;
   for (const topic of TOPICS) {
     for (const sub of topic.subtopics) {
       await prisma.subtopic.upsert({
@@ -33,11 +33,37 @@ const seed = async () => {
           subject: sub.subject,
         },
       });
-      count++;
+      subtopicCount++;
     }
   }
 
-  console.log(`✅ Seeded ${count} subtopics`);
+  console.log(`✅ Seeded ${subtopicCount} subtopics`);
+
+  console.log("🌱 Seeding Postgres concepts...");
+
+  let conceptCount = 0;
+  for (const topic of TOPICS) {
+    for (const sub of topic.subtopics) {
+      for (const concept of sub.concepts) {
+        await prisma.concept.upsert({
+          where: { id: concept.id },
+          update: {
+            name: concept.name,
+            tag: concept.tag,
+          },
+          create: {
+            id: concept.id,
+            subtopicId: sub.id,
+            name: concept.name,
+            tag: concept.tag,
+          },
+        });
+        conceptCount++;
+      }
+    }
+  }
+
+  console.log(`✅ Seeded ${conceptCount} concepts`);
   await prisma.$disconnect();
 };
 
