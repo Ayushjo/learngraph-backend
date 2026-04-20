@@ -129,10 +129,10 @@ export const quizService = {
     const question = pool.find((q) => q.index === questionIndex);
     if (!question) throw new AppError(400, `Question index ${questionIndex} not in pool`);
 
-    const shownQuestions = session.shownQuestions as number[];
+    const shownQuestions = session.shownQuestions as unknown as number[];
     if (shownQuestions.includes(questionIndex)) throw new AppError(409, "Question already answered");
 
-    const pendingRetries = session.pendingRetries as number[];
+    const pendingRetries = session.pendingRetries as unknown as number[];
 
     const isCorrect = chosenAnswer === question.correctIndex;
 
