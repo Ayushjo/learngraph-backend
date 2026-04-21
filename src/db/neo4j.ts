@@ -13,14 +13,12 @@ export const getDriver = (): Driver => {
   return driver;
 };
 
-// Call this on server shutdown
 export const closeDriver = async (): Promise<void> => {
   if (driver) {
     await driver.close();
   }
 };
 
-// Quick connectivity check on startup
 export const verifyNeo4jConnection = async (): Promise<void> => {
   const driver = getDriver();
   try {

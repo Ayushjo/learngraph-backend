@@ -1,7 +1,6 @@
 import { getDriver } from "../db/neo4j";
 import { AppError } from "../middleware/errorHandler";
 import neo4j from "neo4j-driver";
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface GraphNode {
   id: string;
@@ -38,8 +37,6 @@ export interface StudentGraph {
   };
 }
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
 const getMasteryLevel = (
   mastery: number,
   attempts: number,
@@ -51,17 +48,12 @@ const getMasteryLevel = (
   return "mastered";
 };
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
 export const neo4jService = {
-  // Fetch the full knowledge graph for a student
-  // Returns all topic nodes with mastery data + all edges between them
   async getStudentGraph(studentId: string): Promise<StudentGraph> {
     const driver = getDriver();
     const session = driver.session();
 
     try {
-      // ── Step 1: Get all topic nodes with student mastery overlaid ─────────
       const nodesResult = await session.run(
         `MATCH (t:Topic)
          OPTIONAL MATCH (s:Student {id: $studentId})-[k:KNOWS]->(t)
@@ -95,7 +87,6 @@ export const neo4jService = {
         };
       });
 
-      // ── Step 2: Get all edges between topic nodes ─────────────────────────
       const edgesResult = await session.run(
         `MATCH (a:Topic)-[r:REQUIRES|RELATED_TO]->(b:Topic)
          RETURN
@@ -110,7 +101,6 @@ export const neo4jService = {
         type: r.get("type") as GraphEdge["type"],
       }));
 
-      // ── Step 3: Compute stats ─────────────────────────────────────────────
       const attempted = nodes.filter((n) => n.attempts > 0);
       const mastered = nodes.filter((n) => n.masteryLevel === "mastered");
       const struggling = nodes.filter((n) => n.masteryLevel === "struggling");
@@ -141,8 +131,6 @@ export const neo4jService = {
     }
   },
 
-  // Get graph filtered by subject and optional classLevel
-  // Useful for frontend to show focused subgraph
   async getFilteredGraph(
     studentId: string,
     subject: string,
@@ -152,7 +140,6 @@ export const neo4jService = {
     const session = driver.session();
 
     try {
-      // Build dynamic WHERE clause
       const whereClause = classLevel
         ? "WHERE t.subject = $subject AND t.classLevel = $classLevel"
         : "WHERE t.subject = $subject";
@@ -191,7 +178,6 @@ export const neo4jService = {
         };
       });
 
-      // Get edges only between the filtered nodes
       const nodeIds = nodes.map((n) => n.id);
 
       const edgesResult = await session.run(
@@ -240,7 +226,6 @@ export const neo4jService = {
     }
   },
 
-  // Get what topics to study next — topics whose prerequisites are sufficiently mastered
   async getRecommendedTopics(
     studentId: string,
     subject: string,

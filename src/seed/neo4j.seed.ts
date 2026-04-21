@@ -8,15 +8,12 @@ const driver = neo4j.driver(
   neo4j.auth.basic(process.env.NEO4J_USERNAME!, process.env.NEO4J_PASSWORD!),
 );
 
-// ─── Prerequisites between chapters ──────────────────────────────────────────
-
 interface Edge {
   from: string;
   to: string;
 }
 
 const prerequisites: Edge[] = [
-  // Class 11 — each chapter requires its prerequisites
   { from: "c11_structure_atom", to: "c11_basic_concepts" },
   { from: "c11_periodic_table", to: "c11_basic_concepts" },
   { from: "c11_periodic_table", to: "c11_structure_atom" },
@@ -31,8 +28,6 @@ const prerequisites: Edge[] = [
   { from: "c11_organic_basic", to: "c11_redox" },
   { from: "c11_organic_basic", to: "c11_chemical_bonding" },
   { from: "c11_hydrocarbons", to: "c11_organic_basic" },
-
-  // Class 12 — each requires its Class 11 prerequisites
   { from: "c12_electrochemistry", to: "c11_redox" },
   { from: "c12_electrochemistry", to: "c11_thermodynamics" },
   { from: "c12_electrochemistry", to: "c11_equilibrium" },
@@ -62,14 +57,10 @@ const prerequisites: Edge[] = [
   { from: "c12_polymers", to: "c12_amines" },
   { from: "c12_chemistry_everyday", to: "c12_biomolecules" },
   { from: "c12_chemistry_everyday", to: "c12_polymers" },
-
-  // Class 12 internal
   { from: "c12_solutions", to: "c12_solid_state" },
   { from: "c12_electrochemistry", to: "c12_solutions" },
   { from: "c12_chemical_kinetics", to: "c12_electrochemistry" },
 ];
-
-// ─── Related topic edges ──────────────────────────────────────────────────────
 
 const related: Edge[] = [
   { from: "c11_thermodynamics", to: "c11_equilibrium" },
@@ -85,19 +76,15 @@ const related: Edge[] = [
   { from: "c12_biomolecules", to: "c12_polymers" },
 ];
 
-// ─── Seed function ────────────────────────────────────────────────────────────
-
 const seed = async () => {
   const session = driver.session();
 
   try {
     console.log("🌱 Starting Neo4j seed...");
 
-    // Step 1 — Clear everything
     console.log("🗑️  Clearing existing graph...");
     await session.run("MATCH (n) DETACH DELETE n");
 
-    // Step 2 — Constraints
     console.log("🔒 Creating constraints...");
     await session.run(`
       CREATE CONSTRAINT topic_id IF NOT EXISTS
@@ -108,7 +95,6 @@ const seed = async () => {
       FOR (s:Subtopic) REQUIRE s.id IS UNIQUE
     `);
 
-    // Step 3 — Create Topic nodes (chapters)
     console.log(`📚 Creating ${TOPICS.length} topic nodes...`);
     for (const topic of TOPICS) {
       await session.run(
@@ -125,7 +111,6 @@ const seed = async () => {
       );
     }
 
-    // Step 4 — Create Subtopic nodes + HAS_SUBTOPIC edges
     const allSubtopics = TOPICS.flatMap((t) => t.subtopics);
     console.log(`📖 Creating ${allSubtopics.length} subtopic nodes...`);
     for (const sub of allSubtopics) {
@@ -148,7 +133,6 @@ const seed = async () => {
         },
       );
 
-      // HAS_SUBTOPIC edge from Topic to Subtopic
       await session.run(
         `MATCH (t:Topic {id: $topicId}), (s:Subtopic {id: $subtopicId})
          MERGE (t)-[:HAS_SUBTOPIC {order: $order}]->(s)`,
@@ -156,7 +140,6 @@ const seed = async () => {
       );
     }
 
-    // Step 5 — NEXT_SUBTOPIC edges within each chapter
     console.log("🔗 Creating NEXT_SUBTOPIC edges...");
     for (const topic of TOPICS) {
       const subs = topic.subtopics.sort((a, b) => a.order - b.order);
@@ -169,7 +152,6 @@ const seed = async () => {
       }
     }
 
-    // Step 6 — REQUIRES edges between chapters
     console.log(`🔗 Creating ${prerequisites.length} prerequisite edges...`);
     for (const edge of prerequisites) {
       await session.run(
@@ -179,7 +161,6 @@ const seed = async () => {
       );
     }
 
-    // Step 7 — RELATED_TO edges
     console.log(`🔗 Creating ${related.length} related edges...`);
     for (const edge of related) {
       await session.run(
@@ -190,19 +171,10 @@ const seed = async () => {
       );
     }
 
-    // Step 8 — Verify
-    const topicCount = await session.run(
-      "MATCH (t:Topic) RETURN count(t) AS c",
-    );
-    const subCount = await session.run(
-      "MATCH (s:Subtopic) RETURN count(s) AS c",
-    );
-    const reqCount = await session.run(
-      "MATCH ()-[r:REQUIRES]->() RETURN count(r) AS c",
-    );
-    const nextCount = await session.run(
-      "MATCH ()-[r:NEXT_SUBTOPIC]->() RETURN count(r) AS c",
-    );
+    const topicCount = await session.run("MATCH (t:Topic) RETURN count(t) AS c");
+    const subCount = await session.run("MATCH (s:Subtopic) RETURN count(s) AS c");
+    const reqCount = await session.run("MATCH ()-[r:REQUIRES]->() RETURN count(r) AS c");
+    const nextCount = await session.run("MATCH ()-[r:NEXT_SUBTOPIC]->() RETURN count(r) AS c");
 
     console.log("\n✅ Seed complete!");
     console.log(`   Topics (chapters):  ${topicCount.records[0].get("c")}`);

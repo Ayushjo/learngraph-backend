@@ -11,7 +11,6 @@ const requiredEnvVars = [
   "FRONTEND_URL",
 ] as const;
 
-// Fail fast — if any env var is missing, crash immediately with a clear message
 for (const key of requiredEnvVars) {
   if (!process.env[key]) {
     throw new Error(`Missing required environment variable: ${key}`);

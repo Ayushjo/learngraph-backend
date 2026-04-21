@@ -51,14 +51,6 @@ export const conceptService = {
     return Math.min(1, cm.mastery * retention * velocityFactor);
   },
 
-  async updateRetentionScore(cm: ConceptMastery): Promise<void> {
-    const retention = computeRetention(cm.lastAttempted, cm.halfLifeDays);
-    await prisma.conceptMastery.update({
-      where: { id: cm.id },
-      data: { retentionScore: retention },
-    });
-  },
-
   computeUpdatedHalfLife(
     consecutiveCorrect: number,
     consecutiveWrong: number,
@@ -123,8 +115,7 @@ export const conceptService = {
 
     const cogField = cognitiveFieldMap[cognitiveLevel] ?? "recallScore";
     const prevCogScore = existing ? (existing[cogField] as number) : 0;
-    const cogAttempts = attempts;
-    const newCogScore = cogAttempts === 0
+    const newCogScore = attempts === 0
       ? currentScore
       : Math.min(1, Math.max(0, prevCogScore + 0.4 * (currentScore - prevCogScore)));
 
