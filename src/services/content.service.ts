@@ -281,6 +281,7 @@ export type StudentContextInput = {
     topicId: string;
     mastery: number;
     attempts: number;
+    hop?: 1 | 2;
   }>;
   completedSubtopicsInChapter: string[];
   wrongQuestions: Array<{
@@ -292,6 +293,17 @@ export type StudentContextInput = {
   }>;
   lastScorePercentage: number;
   conceptStates?: ConceptState[];
+  weakestPrerequisiteDetail?: {
+    topicId: string;
+    topicName: string;
+    subtopics: Array<{
+      subtopicId: string;
+      subtopicName: string;
+      mastery: number;
+      isComplete: boolean;
+      attempts: number;
+    }>;
+  } | null;
 };
 
 export type GeneratedQuestion = {
