@@ -4,6 +4,7 @@ import { prisma } from "../db/prisma";
 import { AppError } from "../middleware/errorHandler";
 import { getSubtopicById } from "../data/subtopics";
 import { conceptService, ConceptState } from "./concept.service";
+import { passageBankService } from "./passage.bank.service";
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -387,6 +388,66 @@ export const contentService = {
     const profile = gradeProfiles[classLevel];
     const isRetry = studentContext.previousAttempts > 0;
 
+    if (!isRetry) {
+      const banked = await passageBankService.findMatchingPassage(
+        studentId,
+        subtopicId,
+        subtopicDef.topicId,
+        subject,
+        classLevel,
+      );
+
+      if (banked) {
+        await passageBankService.recordPassageSeen(studentId, banked.id);
+
+        const poolQuestions = banked.questions.map((q) => ({
+          index: q.index,
+          cognitiveLevel: q.cognitiveLevel,
+          conceptTag: q.conceptTag,
+          difficulty: q.difficulty,
+          question: q.question,
+          options: q.options as string[],
+          correctIndex: q.correctIndex,
+          explanation: q.explanation,
+        }));
+
+        const session = await prisma.session.create({
+          data: {
+            studentId,
+            subtopicId,
+            topicId: subtopicDef.topicId,
+            neo4jTopicId: subtopicDef.topicId,
+            classLevel,
+            passage: banked.passage,
+            questions: poolQuestions.slice(0, 5),
+            questionPool: poolQuestions,
+            shownQuestions: [],
+            pendingRetries: [],
+            sessionStatus: "active",
+            totalShown: 0,
+            totalCorrect: 0,
+          },
+          include: { subtopic: true },
+        });
+
+        return {
+          sessionId: session.id,
+          title: banked.title,
+          passage: banked.passage,
+          questions: poolQuestions.slice(0, 5),
+          subtopic: {
+            id: session.subtopic.id,
+            name: session.subtopic.name,
+            order: session.subtopic.order,
+            topicId: session.subtopic.topicId,
+            classLevel: session.subtopic.classLevel,
+            subject: session.subtopic.subject,
+          },
+          source: "bank" as const,
+        };
+      }
+    }
+
     const conceptStates =
       studentContext.conceptStates && studentContext.conceptStates.length > 0
         ? studentContext.conceptStates
@@ -653,6 +714,19 @@ Return ONLY this JSON:
         include: { subtopic: true },
       });
 
+      passageBankService
+        .storePassage(
+          subtopicId,
+          subtopicDef.topicId,
+          subject,
+          classLevel,
+          parsed.title,
+          parsed.passage,
+          parsed.questions,
+        )
+        .then((passageId) => passageBankService.recordPassageSeen(studentId, passageId))
+        .catch(() => {});
+
       return {
         sessionId: session.id,
         title: parsed.title,
@@ -666,6 +740,7 @@ Return ONLY this JSON:
           classLevel: session.subtopic.classLevel,
           subject: session.subtopic.subject,
         },
+        source: "generated" as const,
       };
     } catch (error) {
       if (error instanceof AppError) throw error;
