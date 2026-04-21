@@ -85,6 +85,7 @@ export const conceptService = {
     conceptId: string,
     isCorrect: boolean,
     cognitiveLevel: string,
+    difficulty = 0.5,
   ): Promise<ConceptMastery> {
     const existing = await prisma.conceptMastery.findUnique({
       where: { studentId_conceptId: { studentId, conceptId } },
@@ -97,12 +98,15 @@ export const conceptService = {
     const attempts = existing?.attempts ?? 0;
     const previousMastery = existing?.mastery ?? 0;
 
+    const clampedDifficulty = Math.min(1, Math.max(0, difficulty));
+    const scoreWeight = isCorrect ? clampedDifficulty : 1 - clampedDifficulty;
+
     let newMastery: number;
     if (attempts === 0) {
       newMastery = currentScore;
     } else {
       const alpha = attempts === 1 ? 0.6 : attempts === 2 ? 0.4 : 0.3;
-      newMastery = Math.min(1, Math.max(0, previousMastery + alpha * (currentScore - previousMastery)));
+      newMastery = Math.min(1, Math.max(0, previousMastery + alpha * scoreWeight * (currentScore - previousMastery)));
     }
 
     const variance = existing

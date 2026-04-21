@@ -137,7 +137,7 @@ export const quizService = {
     const isCorrect = chosenAnswer === question.correctIndex;
 
     const conceptId = `${session.subtopicId}_${question.conceptTag}`;
-    await conceptService.updateConceptMastery(studentId, conceptId, isCorrect, question.cognitiveLevel);
+    await conceptService.updateConceptMastery(studentId, conceptId, isCorrect, question.cognitiveLevel, question.difficulty);
 
     const newPendingRetries = pendingRetries.filter((idx) => idx !== questionIndex);
 
@@ -296,7 +296,7 @@ export const quizService = {
         const poolQ = poolByIndex.get(i);
         if (!poolQ) return Promise.resolve();
         const conceptId = `${session.subtopicId}_${poolQ.conceptTag}`;
-        return conceptService.updateConceptMastery(studentId, conceptId, a.isCorrect, a.cognitiveLevel);
+        return conceptService.updateConceptMastery(studentId, conceptId, a.isCorrect, a.cognitiveLevel, poolQ.difficulty);
       }),
     );
 
