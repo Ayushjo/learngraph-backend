@@ -17,6 +17,7 @@ model Student {
   quizAttempts      QuizAttempt[]
   subtopicMasteries SubtopicMastery[]
   conceptMasteries  ConceptMastery[]
+  seenContent       StudentSeenContent[]
 }
 
 model Subtopic {
@@ -124,4 +125,64 @@ model QuizAttempt {
 
   student Student @relation(fields: [studentId], references: [id])
   session Session @relation(fields: [sessionId], references: [id])
+}
+
+model PassageBank {
+  id           String   @id @default(cuid())
+  subtopicId   String
+  topicId      String
+  subject      String
+  classLevel   Int
+  title        String
+  passage      String
+  timesUsed    Int      @default(0)
+  averageScore Float    @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  questions PassageBankQuestion[]
+}
+
+model QuestionBank {
+  id                  String   @id @default(cuid())
+  subtopicId          String
+  conceptTag          String
+  cognitiveLevel      String
+  difficulty          Float
+  question            String
+  options             Json
+  correctIndex        Int
+  explanation         String
+  timesAnswered       Int      @default(0)
+  timesCorrect        Int      @default(0)
+  discriminationIndex Float    @default(0)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+
+  passages PassageBankQuestion[]
+}
+
+model PassageBankQuestion {
+  id         String @id @default(cuid())
+  passageId  String
+  questionId String
+  index      Int
+
+  passage  PassageBank  @relation(fields: [passageId], references: [id])
+  question QuestionBank @relation(fields: [questionId], references: [id])
+
+  @@unique([passageId, index])
+  @@unique([passageId, questionId])
+}
+
+model StudentSeenContent {
+  id          String   @id @default(cuid())
+  studentId   String
+  contentType String
+  contentId   String
+  seenAt      DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([studentId, contentType, contentId])
 }
