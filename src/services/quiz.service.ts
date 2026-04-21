@@ -288,11 +288,21 @@ export const quizService = {
       },
     });
 
+    const pool = session.questionPool as unknown as PoolQuestion[];
+    const poolByIndex = new Map(pool.map((q) => [q.index, q]));
+
+    await Promise.all(
+      answerResults.map((a, i) => {
+        const poolQ = poolByIndex.get(i);
+        if (!poolQ) return Promise.resolve();
+        const conceptId = `${session.subtopicId}_${poolQ.conceptTag}`;
+        return conceptService.updateConceptMastery(studentId, conceptId, a.isCorrect, a.cognitiveLevel);
+      }),
+    );
+
     const masteryResult = await subtopicService.updateSubtopicMastery(
       studentId,
       session.subtopicId,
-      score,
-      total,
     );
 
     const driver = getDriver();

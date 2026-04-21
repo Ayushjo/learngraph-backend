@@ -122,8 +122,6 @@ export const subtopicService = {
   async updateSubtopicMastery(
     studentId: string,
     subtopicId: string,
-    score: number,
-    total: number,
   ): Promise<{
     subtopicId: string;
     previousMastery: number;
@@ -134,34 +132,35 @@ export const subtopicService = {
     nextSubtopicId: string | null;
     chapterMastery: number;
   }> {
-    const scorePercent = score / total;
-
-    const existing = await prisma.subtopicMastery.findUnique({
-      where: { studentId_subtopicId: { studentId, subtopicId } },
-      include: { subtopic: true },
-    });
+    const [existing, concepts] = await Promise.all([
+      prisma.subtopicMastery.findUnique({
+        where: { studentId_subtopicId: { studentId, subtopicId } },
+        include: { subtopic: true },
+      }),
+      conceptService.getConceptsForSubtopic(studentId, subtopicId),
+    ]);
 
     const previousMastery = existing?.mastery ?? 0;
     const attempts = existing?.attempts ?? 0;
     const wasComplete = existing?.isComplete ?? false;
 
-    const alpha = attempts === 0 ? 0.6 : attempts === 1 ? 0.4 : 0.3;
     const newMastery =
-      attempts === 0
-        ? Math.round(scorePercent * 10000) / 10000
-        : Math.round(
-            Math.min(1, Math.max(0, previousMastery + alpha * (scorePercent - previousMastery))) * 10000,
-          ) / 10000;
+      concepts.length > 0
+        ? Math.round(
+            (concepts.reduce((sum, c) => sum + c.effectiveMastery, 0) / concepts.length) * 10000,
+          ) / 10000
+        : previousMastery;
+
+    const allConceptsAboveFloor = concepts.every((c) => c.effectiveMastery >= 0.3);
+    const isComplete = wasComplete || (newMastery >= COMPLETION_THRESHOLD && allConceptsAboveFloor);
+    const justCompleted = !wasComplete && isComplete;
 
     const trend: "improving" | "declining" | "stable" =
-      scorePercent > previousMastery + 0.05
+      newMastery > previousMastery + 0.05
         ? "improving"
-        : scorePercent < previousMastery - 0.1
+        : newMastery < previousMastery - 0.05
           ? "declining"
           : "stable";
-
-    const isComplete = newMastery >= COMPLETION_THRESHOLD || wasComplete;
-    const justCompleted = !wasComplete && isComplete;
 
     await prisma.subtopicMastery.upsert({
       where: { studentId_subtopicId: { studentId, subtopicId } },
