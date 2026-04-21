@@ -194,28 +194,80 @@ function buildQuestionAllocation(concepts: ConceptState[]): QuestionSlot[] {
   return slots;
 }
 
+function getMasteryLabel(effectiveMastery: number): string {
+  if (effectiveMastery < 0.3) return "CRITICAL GAP";
+  if (effectiveMastery < 0.5) return "WEAK";
+  if (effectiveMastery < 0.75) return "DEVELOPING";
+  return "STRONG";
+}
+
 function buildConceptContext(concepts: ConceptState[]): string {
   if (concepts.length === 0) return "";
 
   const lines = concepts.map((c) => {
     const masteryPct = Math.round(c.effectiveMastery * 100);
+    const label = getMasteryLabel(c.effectiveMastery);
     const velocityLabel =
       c.velocity > 0.1 ? "improving" : c.velocity < -0.1 ? "declining" : "stable";
     const weakestLevel = getWeakestCogLevel(c);
     const retentionPct = Math.round(c.retentionScore * 100);
     const forgetting =
       c.daysSinceAttempt !== null && c.daysSinceAttempt > c.halfLifeDays
-        ? `FORGETTING (last seen ${Math.round(c.daysSinceAttempt)}d ago, retention ${retentionPct}%)`
+        ? `⚠ FORGETTING — last seen ${Math.round(c.daysSinceAttempt)}d ago, retention ${retentionPct}%`
         : c.attempts === 0
           ? "NEVER ATTEMPTED"
           : `retention ${retentionPct}%`;
 
-    return `  ${c.conceptName} [tag: ${c.tag}]
+    return `  [${label}] ${c.conceptName} [tag: ${c.tag}]
     effective mastery: ${masteryPct}%  |  velocity: ${velocityLabel}  |  ${forgetting}
     weakest cognitive level: ${weakestLevel}  |  consecutive wrong: ${c.consecutiveWrong}`;
   });
 
   return `━━━ CONCEPT MASTERY STATE ━━━
+${lines.join("\n\n")}`;
+}
+
+function buildMasteryLabelInstructions(concepts: ConceptState[]): string {
+  if (concepts.length === 0) return "";
+
+  const critical = concepts.filter((c) => c.effectiveMastery < 0.3);
+  const weak = concepts.filter((c) => c.effectiveMastery >= 0.3 && c.effectiveMastery < 0.5);
+  const developing = concepts.filter((c) => c.effectiveMastery >= 0.5 && c.effectiveMastery < 0.75);
+  const strong = concepts.filter((c) => c.effectiveMastery >= 0.75);
+
+  const lines: string[] = [];
+
+  if (critical.length > 0) {
+    lines.push(`CRITICAL GAP concepts — ${critical.map((c) => `"${c.conceptName}"`).join(", ")}:
+  • Passage must explain this concept clearly from scratch using a concrete Indian example
+  • Questions targeting these concepts MUST be recall or vocabulary level (difficulty ≤ 0.40)
+  • Do NOT assume the student has any prior understanding of these`);
+  }
+
+  if (weak.length > 0) {
+    lines.push(`WEAK concepts — ${weak.map((c) => `"${c.conceptName}"`).join(", ")}:
+  • Passage must reinforce the core idea with a cause-and-effect explanation
+  • Questions targeting these should be vocabulary or cause_and_effect level (difficulty 0.30–0.55)
+  • Address common misconceptions related to these concepts`);
+  }
+
+  if (developing.length > 0) {
+    lines.push(`DEVELOPING concepts — ${developing.map((c) => `"${c.conceptName}"`).join(", ")}:
+  • Student knows the basics — push them toward deeper understanding
+  • Questions targeting these should be cause_and_effect or inference level (difficulty 0.50–0.70)
+  • Bridge from what they know to what they don't yet apply`);
+  }
+
+  if (strong.length > 0) {
+    lines.push(`STRONG concepts — ${strong.map((c) => `"${c.conceptName}"`).join(", ")}:
+  • Student has solid mastery — challenge them with application or inference
+  • Questions targeting these should be inference or application level (difficulty 0.65–0.90)
+  • Present novel scenarios or edge cases not directly in the passage`);
+  }
+
+  if (lines.length === 0) return "";
+
+  return `━━━ MANDATORY CONCEPT-LEVEL INSTRUCTIONS ━━━
 ${lines.join("\n\n")}`;
 }
 
@@ -345,6 +397,7 @@ export const contentService = {
 
     const conceptContext = hasConceptData ? buildConceptContext(conceptStates) : "";
     const forgettingContext = hasConceptData ? buildForgettingContext(conceptStates) : "";
+    const masteryLabelInstructions = hasConceptData ? buildMasteryLabelInstructions(conceptStates) : "";
     const allocationTable = hasConceptData ? buildAllocationTable(allocation) : "";
 
     const systemPrompt = `You are an expert Indian Chemistry teacher and JEE/NEET educator with 20 years of experience teaching NCERT Chemistry for Class 11 and 12.
@@ -472,6 +525,7 @@ ${retryHistoryContext}
 ${completedContext}
 ${conceptContext}
 ${forgettingContext}
+${masteryLabelInstructions}
 
 ━━━ WHAT THIS SUBTOPIC COVERS ━━━
 Focus ONLY on: ${keyConceptsSummary}
