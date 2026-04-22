@@ -171,6 +171,10 @@ export const quizService = {
       },
     });
 
+    if (sessionComplete) {
+      await subtopicService.updateSubtopicMastery(studentId, session.subtopicId);
+    }
+
     const summary: SessionSummary | null = sessionComplete
       ? {
           score: newTotalCorrect,
