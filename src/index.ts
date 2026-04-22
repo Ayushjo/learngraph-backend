@@ -31,26 +31,29 @@ app.use(errorHandler);
 
 const start = async () => {
   try {
-    await verifyNeo4jConnection();
     await prisma.$connect();
     console.log("✅ Postgres connected");
-
-    startQualityJob();
-
-    const server = app.listen(env.PORT, () => {
-      console.log(`🚀 Server running on port ${env.PORT}`);
-    });
-
-    process.on("SIGTERM", async () => {
-      stopQualityJob();
-      server.close();
-      await closeDriver();
-      await prisma.$disconnect();
-    });
   } catch (error) {
-    console.error("Failed to start server:", error);
+    console.error("Failed to connect to Postgres:", error);
     process.exit(1);
   }
+
+  verifyNeo4jConnection().catch((error) => {
+    console.warn("⚠️  Neo4j unavailable — graph endpoints will fail until connection is restored:", (error as Error).message);
+  });
+
+  startQualityJob();
+
+  const server = app.listen(env.PORT, () => {
+    console.log(`🚀 Server running on port ${env.PORT}`);
+  });
+
+  process.on("SIGTERM", async () => {
+    stopQualityJob();
+    server.close();
+    await closeDriver();
+    await prisma.$disconnect();
+  });
 };
 
 start();
