@@ -5,6 +5,7 @@ import { AppError } from "../middleware/errorHandler";
 import { getSubtopicById } from "../data/subtopics";
 import { conceptService, ConceptState } from "./concept.service";
 import { passageBankService } from "./passage.bank.service";
+import { questionBankService, AssemblySlot } from "./question.bank.service";
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -53,40 +54,14 @@ const gradeProfiles: Record<
 };
 
 const questionTypes = [
-  {
-    level: "recall",
-    instruction:
-      "Test direct recall — answer explicitly stated in passage. Easiest question.",
-  },
-  {
-    level: "vocabulary",
-    instruction:
-      "Test understanding of a specific chemical term used in the passage.",
-  },
-  {
-    level: "cause_and_effect",
-    instruction:
-      "Test cause and effect — why something happens based on the passage.",
-  },
-  {
-    level: "inference",
-    instruction:
-      "Test inference — not directly stated but logically follows from the passage.",
-  },
-  {
-    level: "application",
-    instruction:
-      "Test application — real world chemistry scenario based on passage concepts.",
-  },
+  { level: "recall", instruction: "Test direct recall — answer explicitly stated in passage. Easiest question." },
+  { level: "vocabulary", instruction: "Test understanding of a specific chemical term used in the passage." },
+  { level: "cause_and_effect", instruction: "Test cause and effect — why something happens based on the passage." },
+  { level: "inference", instruction: "Test inference — not directly stated but logically follows from the passage." },
+  { level: "application", instruction: "Test application — real world chemistry scenario based on passage concepts." },
 ];
 
-const cogLevelProgression = [
-  "recall",
-  "vocabulary",
-  "cause_and_effect",
-  "inference",
-  "application",
-];
+const cogLevelProgression = ["recall", "vocabulary", "cause_and_effect", "inference", "application"];
 
 function getWeakestCogLevel(state: ConceptState): string {
   const scores = [
@@ -118,18 +93,14 @@ function getNextCogLevel(cogLevel: string): string {
 
 function getTargetDifficulty(effectiveMastery: number): number {
   const m = Math.min(1, Math.max(0, effectiveMastery));
-  if (m < 0.3) return Math.round((0.20 + m * 0.50) * 100) / 100;
-  if (m < 0.6) return Math.round((0.35 + (m - 0.3) * 1.00) * 100) / 100;
+  if (m < 0.3) return Math.round((0.2 + m * 0.5) * 100) / 100;
+  if (m < 0.6) return Math.round((0.35 + (m - 0.3) * 1.0) * 100) / 100;
   if (m < 0.8) return Math.round((0.65 + (m - 0.6) * 0.75) * 100) / 100;
-  return Math.round((0.80 + (m - 0.8) * 0.50) * 100) / 100;
+  return Math.round((0.8 + (m - 0.8) * 0.5) * 100) / 100;
 }
 
-interface QuestionSlot {
-  index: number;
-  conceptTag: string;
+interface QuestionSlot extends AssemblySlot {
   conceptName: string;
-  cognitiveLevel: string;
-  targetDifficulty: number;
   isBackup: boolean;
 }
 
@@ -179,7 +150,7 @@ function buildQuestionAllocation(concepts: ConceptState[]): QuestionSlot[] {
     conceptTag: backup1.tag,
     conceptName: backup1.conceptName,
     cognitiveLevel: "inference",
-    targetDifficulty: Math.min(0.9, getTargetDifficulty(backup1.effectiveMastery) + 0.10),
+    targetDifficulty: Math.min(0.9, getTargetDifficulty(backup1.effectiveMastery) + 0.1),
     isBackup: true,
   });
 
@@ -370,6 +341,113 @@ export type GeneratedQuestion = {
   explanation: string;
 };
 
+const QUESTION_RULES_BLOCK = (questionTypes: Array<{ level: string; instruction: string }>, hasConceptData: boolean, subtopicId?: string) => `
+━━━ QUESTION RULES ━━━
+Question type descriptions:
+${questionTypes.map((qt) => `${qt.level.toUpperCase()}: ${qt.instruction}`).join("\n")}
+
+Each question:
+- 4 options (A, B, C, D)
+- One unambiguous correct answer
+- Three distractors: real NCERT Chemistry concepts, plausible to an unprepared student, reflect common JEE/NEET misconceptions
+- Explanation referencing the exact passage line
+- difficulty: a float from 0.0 to 1.0 (0.2 = very easy, 0.5 = medium, 0.8 = very hard)
+- conceptTag: must exactly match one of the tags from the CONCEPT MASTERY STATE above${!hasConceptData ? ` or use "${subtopicId}_general"` : ""}`;
+
+async function generateQuestionsForPassage(
+  passage: string,
+  subtopicId: string,
+  subtopicName: string,
+  classLevel: 11 | 12,
+  allocation: QuestionSlot[],
+  conceptStates: ConceptState[],
+): Promise<GeneratedQuestion[]> {
+  const hasConceptData = conceptStates.length > 0;
+  const conceptContext = hasConceptData ? buildConceptContext(conceptStates) : "";
+  const masteryLabelInstructions = hasConceptData ? buildMasteryLabelInstructions(conceptStates) : "";
+  const allocationTable = hasConceptData ? buildAllocationTable(allocation) : "";
+
+  const systemPrompt = `You are an expert Indian Chemistry teacher and JEE/NEET educator.
+Your job is to generate exactly 8 quiz questions for a given reading passage.
+All questions must be answerable from the passage alone.
+Output ONLY valid JSON — no markdown, no backticks, no extra text.
+Generate EXACTLY 8 questions — no more, no less.`;
+
+  const userPrompt = `Generate 8 quiz questions for this passage:
+
+SUBTOPIC: ${subtopicName}
+CLASS: ${classLevel}
+EXAM BOARD: NCERT (JEE/NEET relevant)
+
+━━━ PASSAGE ━━━
+${passage}
+
+${conceptContext}
+${masteryLabelInstructions}
+
+${allocationTable}
+${QUESTION_RULES_BLOCK(questionTypes, hasConceptData, subtopicId)}
+
+━━━ OUTPUT FORMAT ━━━
+Return ONLY this JSON:
+{
+  "questions": [
+    {
+      "index": 0,
+      "cognitiveLevel": "recall",
+      "conceptTag": "tag_name",
+      "difficulty": 0.25,
+      "question": "question text",
+      "options": ["A. text", "B. text", "C. text", "D. text"],
+      "correctIndex": 0,
+      "explanation": "explanation referencing passage"
+    }
+  ]
+}`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-opus-4-5",
+    max_tokens: 2000,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  const rawContent = response.content[0];
+  if (rawContent.type !== "text") throw new AppError(500, "Unexpected response from Claude");
+
+  const cleaned = rawContent.text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+
+  let parsed: { questions: GeneratedQuestion[] };
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new AppError(500, "Claude returned invalid JSON for questions — please retry");
+  }
+
+  if (!Array.isArray(parsed.questions) || parsed.questions.length !== 8) {
+    throw new AppError(500, "Claude returned wrong number of questions — please retry");
+  }
+
+  const missingFields = parsed.questions.some(
+    (q) => typeof q.conceptTag !== "string" || q.conceptTag.length === 0 || typeof q.difficulty !== "number",
+  );
+  if (missingFields) {
+    throw new AppError(500, "Claude returned questions without required fields — please retry");
+  }
+
+  return parsed.questions;
+}
+
+function buildSessionPool(
+  questions: GeneratedQuestion[],
+  bankQuestionIds: Map<number, string>,
+): Array<GeneratedQuestion & { bankQuestionId?: string }> {
+  return questions.map((q) => ({
+    ...q,
+    ...(bankQuestionIds.has(q.index) ? { bankQuestionId: bankQuestionIds.get(q.index) } : {}),
+  }));
+}
+
 export const contentService = {
   async generatePassageAndQuestions(
     studentId: string,
@@ -388,37 +466,111 @@ export const contentService = {
     const profile = gradeProfiles[classLevel];
     const isRetry = studentContext.previousAttempts > 0;
 
+    const conceptStates =
+      studentContext.conceptStates && studentContext.conceptStates.length > 0
+        ? studentContext.conceptStates
+        : await conceptService.getConceptsForSubtopic(studentId, subtopicId);
+
+    const allocation = buildQuestionAllocation(conceptStates);
+    const hasConceptData = allocation.length > 0;
+
     if (!isRetry) {
-      const banked = await passageBankService.findMatchingPassage(
+      const passage = await passageBankService.findMatchingPassage(
         studentId,
         subtopicId,
-        subtopicDef.topicId,
+        topicId,
         subject,
         classLevel,
       );
 
-      if (banked) {
-        await passageBankService.recordPassageSeen(studentId, banked.id);
+      if (passage) {
+        const assembledPool = hasConceptData
+          ? await questionBankService.assembleQuestionPool(studentId, subtopicId, allocation)
+          : null;
 
-        const poolQuestions = banked.questions.map((q) => ({
-          index: q.index,
-          cognitiveLevel: q.cognitiveLevel,
-          conceptTag: q.conceptTag,
-          difficulty: q.difficulty,
-          question: q.question,
-          options: q.options as string[],
-          correctIndex: q.correctIndex,
-          explanation: q.explanation,
-        }));
+        if (assembledPool) {
+          const poolQuestions = assembledPool.map((q) => ({
+            index: q.index,
+            cognitiveLevel: q.cognitiveLevel,
+            conceptTag: q.conceptTag,
+            difficulty: q.difficulty,
+            question: q.question,
+            options: q.options as string[],
+            correctIndex: q.correctIndex,
+            explanation: q.explanation,
+            bankQuestionId: q.id,
+          }));
+
+          await passageBankService.recordPassageSeen(studentId, passage.id);
+          await Promise.all(
+            assembledPool.map((q) => questionBankService.recordQuestionSeen(studentId, q.id)),
+          );
+
+          const session = await prisma.session.create({
+            data: {
+              studentId,
+              subtopicId,
+              topicId,
+              neo4jTopicId: topicId,
+              classLevel,
+              passage: passage.passage,
+              questions: poolQuestions.slice(0, 5),
+              questionPool: poolQuestions,
+              shownQuestions: [],
+              pendingRetries: [],
+              sessionStatus: "active",
+              totalShown: 0,
+              totalCorrect: 0,
+            },
+            include: { subtopic: true },
+          });
+
+          return {
+            sessionId: session.id,
+            title: passage.title,
+            passage: passage.passage,
+            questions: poolQuestions.slice(0, 5),
+            subtopic: {
+              id: session.subtopic.id,
+              name: session.subtopic.name,
+              order: session.subtopic.order,
+              topicId: session.subtopic.topicId,
+              classLevel: session.subtopic.classLevel,
+              subject: session.subtopic.subject,
+            },
+            source: "bank" as const,
+          };
+        }
+
+        const generatedQuestions = await generateQuestionsForPassage(
+          passage.passage,
+          subtopicId,
+          subtopicName,
+          classLevel as 11 | 12,
+          allocation,
+          conceptStates,
+        );
+
+        const storedIds = await passageBankService.storeQuestionsForPassage(
+          passage.id,
+          subtopicId,
+          generatedQuestions,
+        );
+
+        const bankIdMap = new Map(storedIds.map((id, i) => [i, id]));
+        const poolQuestions = buildSessionPool(generatedQuestions, bankIdMap);
+
+        await passageBankService.recordPassageSeen(studentId, passage.id);
+        await Promise.all(storedIds.map((id) => questionBankService.recordQuestionSeen(studentId, id)));
 
         const session = await prisma.session.create({
           data: {
             studentId,
             subtopicId,
-            topicId: subtopicDef.topicId,
-            neo4jTopicId: subtopicDef.topicId,
+            topicId,
+            neo4jTopicId: topicId,
             classLevel,
-            passage: banked.passage,
+            passage: passage.passage,
             questions: poolQuestions.slice(0, 5),
             questionPool: poolQuestions,
             shownQuestions: [],
@@ -432,8 +584,8 @@ export const contentService = {
 
         return {
           sessionId: session.id,
-          title: banked.title,
-          passage: banked.passage,
+          title: passage.title,
+          passage: passage.passage,
           questions: poolQuestions.slice(0, 5),
           subtopic: {
             id: session.subtopic.id,
@@ -447,14 +599,6 @@ export const contentService = {
         };
       }
     }
-
-    const conceptStates =
-      studentContext.conceptStates && studentContext.conceptStates.length > 0
-        ? studentContext.conceptStates
-        : await conceptService.getConceptsForSubtopic(studentId, subtopicId);
-
-    const allocation = buildQuestionAllocation(conceptStates);
-    const hasConceptData = allocation.length > 0;
 
     const conceptContext = hasConceptData ? buildConceptContext(conceptStates) : "";
     const forgettingContext = hasConceptData ? buildForgettingContext(conceptStates) : "";
@@ -612,18 +756,7 @@ Context: ${profile.examContext}
 - Terminology must match NCERT Class ${classLevel} exactly
 ${prereqReinforcementInstruction}
 ${allocationTable || fallbackBloomsNote}
-
-━━━ QUESTION RULES ━━━
-Question type descriptions:
-${questionTypes.map((qt) => `${qt.level.toUpperCase()}: ${qt.instruction}`).join("\n")}
-
-Each question:
-- 4 options (A, B, C, D)
-- One unambiguous correct answer
-- Three distractors: real NCERT Chemistry concepts, plausible to an unprepared student, reflect common JEE/NEET misconceptions
-- Explanation referencing the exact passage line
-- difficulty: a float from 0.0 to 1.0 (0.2 = very easy, 0.5 = medium, 0.8 = very hard)
-- conceptTag: must exactly match one of the tags from the CONCEPT MASTERY STATE above${!hasConceptData ? ` or use "${subtopicDef.id}_general"` : ""}
+${QUESTION_RULES_BLOCK(questionTypes, hasConceptData, subtopicId)}
 
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY this JSON:
@@ -653,21 +786,14 @@ Return ONLY this JSON:
       });
 
       const rawContent = response.content[0];
-      if (rawContent.type !== "text") {
-        throw new AppError(500, "Unexpected response from Claude");
-      }
+      if (rawContent.type !== "text") throw new AppError(500, "Unexpected response from Claude");
 
       const cleaned = rawContent.text
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
         .trim();
 
-      let parsed: {
-        title: string;
-        passage: string;
-        questions: GeneratedQuestion[];
-      };
-
+      let parsed: { title: string; passage: string; questions: GeneratedQuestion[] };
       try {
         parsed = JSON.parse(cleaned);
       } catch {
@@ -693,18 +819,46 @@ Return ONLY this JSON:
         throw new AppError(500, "Claude returned questions without required conceptTag or difficulty — please retry");
       }
 
-      const shownQuestions = parsed.questions.slice(0, 5);
+      const conceptTags = [...new Set(parsed.questions.map((q) => q.conceptTag))];
+
+      const passageId = await passageBankService.storePassage(
+        subtopicId,
+        topicId,
+        subject,
+        classLevel,
+        parsed.title,
+        parsed.passage,
+        conceptTags,
+        parsed.questions,
+      );
+
+      const storedQuestionIds = await prisma.passageBankQuestion
+        .findMany({ where: { passageId }, orderBy: { index: "asc" }, select: { questionId: true, index: true } })
+        .then((rows) => new Map(rows.map((r) => [r.index, r.questionId])));
+
+      const bankIdMap = new Map(
+        Array.from(storedQuestionIds.entries()).map(([idx, id]) => [idx, id]),
+      );
+
+      const poolQuestions = buildSessionPool(parsed.questions, bankIdMap);
+
+      await passageBankService.recordPassageSeen(studentId, passageId);
+      await Promise.all(
+        Array.from(storedQuestionIds.values()).map((id) =>
+          questionBankService.recordQuestionSeen(studentId, id),
+        ),
+      );
 
       const session = await prisma.session.create({
         data: {
           studentId,
           subtopicId,
-          topicId: subtopicDef.topicId,
-          neo4jTopicId: subtopicDef.topicId,
+          topicId,
+          neo4jTopicId: topicId,
           classLevel,
           passage: parsed.passage,
-          questions: shownQuestions,
-          questionPool: parsed.questions,
+          questions: poolQuestions.slice(0, 5),
+          questionPool: poolQuestions,
           shownQuestions: [],
           pendingRetries: [],
           sessionStatus: "active",
@@ -714,24 +868,11 @@ Return ONLY this JSON:
         include: { subtopic: true },
       });
 
-      passageBankService
-        .storePassage(
-          subtopicId,
-          subtopicDef.topicId,
-          subject,
-          classLevel,
-          parsed.title,
-          parsed.passage,
-          parsed.questions,
-        )
-        .then((passageId) => passageBankService.recordPassageSeen(studentId, passageId))
-        .catch(() => {});
-
       return {
         sessionId: session.id,
         title: parsed.title,
         passage: parsed.passage,
-        questions: shownQuestions,
+        questions: poolQuestions.slice(0, 5),
         subtopic: {
           id: session.subtopic.id,
           name: session.subtopic.name,
