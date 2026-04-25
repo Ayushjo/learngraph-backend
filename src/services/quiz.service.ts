@@ -1,6 +1,7 @@
 import { prisma } from "../db/prisma";
 import { subtopicService } from "./subtopics.service";
 import { conceptService } from "./concept.service";
+import { questionBankService } from "./question.bank.service";
 import { AppError } from "../middleware/errorHandler";
 import { Prisma } from "@prisma/client";
 import { getDriver } from "../db/neo4j";
@@ -37,6 +38,7 @@ interface PoolQuestion {
   explanation: string;
   conceptTag: string;
   difficulty: number;
+  bankQuestionId?: string;
 }
 
 type NextQuestion = Omit<PoolQuestion, "correctIndex" | "explanation">;
@@ -138,6 +140,10 @@ export const quizService = {
 
     const conceptId = `${session.subtopicId}_${question.conceptTag}`;
     await conceptService.updateConceptMastery(studentId, conceptId, isCorrect, question.cognitiveLevel, question.difficulty);
+
+    if (question.bankQuestionId) {
+      questionBankService.updateQuestionIRT(question.bankQuestionId, isCorrect).catch(() => {});
+    }
 
     const newPendingRetries = pendingRetries.filter((idx) => idx !== questionIndex);
 
