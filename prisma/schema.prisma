@@ -135,6 +135,7 @@ model PassageBank {
   classLevel   Int
   title        String
   passage      String
+  conceptTags  String[] @default([])
   timesUsed    Int      @default(0)
   averageScore Float    @default(0)
   isActive     Boolean  @default(true)
