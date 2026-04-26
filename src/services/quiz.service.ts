@@ -138,8 +138,13 @@ export const quizService = {
 
     const isCorrect = chosenAnswer === question.correctIndex;
 
-    const conceptId = `${session.subtopicId}_${question.conceptTag}`;
-    await conceptService.updateConceptMastery(studentId, conceptId, isCorrect, question.cognitiveLevel, question.difficulty);
+    const conceptRow = await prisma.concept.findFirst({
+      where: { subtopicId: session.subtopicId, tag: question.conceptTag },
+      select: { id: true },
+    });
+    if (conceptRow) {
+      await conceptService.updateConceptMastery(studentId, conceptRow.id, isCorrect, question.cognitiveLevel, question.difficulty);
+    }
 
     if (question.bankQuestionId) {
       questionBankService.updateQuestionIRT(question.bankQuestionId, isCorrect).catch(() => {});
@@ -301,11 +306,18 @@ export const quizService = {
     const pool = session.questionPool as unknown as PoolQuestion[];
     const poolByIndex = new Map(pool.map((q) => [q.index, q]));
 
+    const concepts = await prisma.concept.findMany({
+      where: { subtopicId: session.subtopicId },
+      select: { id: true, tag: true },
+    });
+    const tagToConceptId = new Map(concepts.map((c) => [c.tag, c.id]));
+
     await Promise.all(
       answerResults.map((a, i) => {
         const poolQ = poolByIndex.get(i);
         if (!poolQ) return Promise.resolve();
-        const conceptId = `${session.subtopicId}_${poolQ.conceptTag}`;
+        const conceptId = tagToConceptId.get(poolQ.conceptTag);
+        if (!conceptId) return Promise.resolve();
         return conceptService.updateConceptMastery(studentId, conceptId, a.isCorrect, a.cognitiveLevel, poolQ.difficulty);
       }),
     );
