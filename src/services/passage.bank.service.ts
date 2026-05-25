@@ -101,6 +101,16 @@ export const passageBankService = {
     subtopicId: string,
     questions: StoredQuestion[],
   ): Promise<string[]> {
+    // If questions are already stored for this passage, return their IDs
+    const existing = await prisma.passageBankQuestion.findMany({
+      where: { passageId },
+      orderBy: { index: "asc" },
+      select: { questionId: true },
+    });
+    if (existing.length > 0) {
+      return existing.map((e) => e.questionId);
+    }
+
     const ids: string[] = [];
     for (const q of questions) {
       const questionRecord = await prisma.questionBank.create({

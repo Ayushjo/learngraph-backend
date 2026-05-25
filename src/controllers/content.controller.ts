@@ -5,16 +5,34 @@ import { AppError } from "../middleware/errorHandler";
 
 export const contentController = {
   async generate(req: Request, res: Response, next: NextFunction) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    req.on("close", () => {
+      res.end();
+    });
+
     try {
       const { studentId, subtopicId } = req.body;
       if (!studentId || !subtopicId) {
         throw new AppError(400, "studentId and subtopicId are required");
       }
 
+      send("status", { message: "Fetching your knowledge graph..." });
+
       const studentContext = await subtopicService.getStudentContextForSubtopic(
         studentId,
         subtopicId,
       );
+
+      send("status", { message: "Analyzing concept gaps..." });
+      send("status", { message: "Generating content..." });
 
       const result = await contentService.generatePassageAndQuestions(
         studentId,
@@ -22,9 +40,11 @@ export const contentController = {
         studentContext,
       );
 
-      res.status(200).json({ success: true, data: result });
+      send("result", result);
+      res.end();
     } catch (error) {
-      next(error);
+      send("error", { message: error instanceof AppError ? error.message : "Generation failed" });
+      res.end();
     }
   },
 

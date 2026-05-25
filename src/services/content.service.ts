@@ -3,7 +3,7 @@ import { env } from "../config/env";
 import { prisma } from "../db/prisma";
 import { AppError } from "../middleware/errorHandler";
 import { getSubtopicById } from "../data/subtopics";
-import { conceptService, ConceptState } from "./concept.service";
+import { ConceptState } from "./concept.service";
 import { passageBankService } from "./passage.bank.service";
 import { questionBankService, AssemblySlot } from "./question.bank.service";
 
@@ -406,7 +406,7 @@ Return ONLY this JSON:
 }`;
 
   const response = await anthropic.messages.create({
-    model: "claude-opus-4-5",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 2000,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
@@ -466,10 +466,7 @@ export const contentService = {
     const profile = gradeProfiles[classLevel];
     const isRetry = studentContext.previousAttempts > 0;
 
-    const conceptStates =
-      studentContext.conceptStates && studentContext.conceptStates.length > 0
-        ? studentContext.conceptStates
-        : await conceptService.getConceptsForSubtopic(studentId, subtopicId);
+    const conceptStates = studentContext.conceptStates ?? [];
 
     const allocation = buildQuestionAllocation(conceptStates);
     const hasConceptData = allocation.length > 0;
@@ -522,7 +519,6 @@ export const contentService = {
               totalShown: 0,
               totalCorrect: 0,
             },
-            include: { subtopic: true },
           });
 
           return {
@@ -531,12 +527,12 @@ export const contentService = {
             passage: passage.passage,
             questions: poolQuestions.slice(0, 5),
             subtopic: {
-              id: session.subtopic.id,
-              name: session.subtopic.name,
-              order: session.subtopic.order,
-              topicId: session.subtopic.topicId,
-              classLevel: session.subtopic.classLevel,
-              subject: session.subtopic.subject,
+              id: subtopicDef.id,
+              name: subtopicDef.name,
+              order: subtopicDef.order,
+              topicId: subtopicDef.topicId,
+              classLevel: subtopicDef.classLevel,
+              subject: subtopicDef.subject,
             },
             source: "bank" as const,
           };
@@ -579,7 +575,6 @@ export const contentService = {
             totalShown: 0,
             totalCorrect: 0,
           },
-          include: { subtopic: true },
         });
 
         return {
@@ -588,12 +583,12 @@ export const contentService = {
           passage: passage.passage,
           questions: poolQuestions.slice(0, 5),
           subtopic: {
-            id: session.subtopic.id,
-            name: session.subtopic.name,
-            order: session.subtopic.order,
-            topicId: session.subtopic.topicId,
-            classLevel: session.subtopic.classLevel,
-            subject: session.subtopic.subject,
+            id: subtopicDef.id,
+            name: subtopicDef.name,
+            order: subtopicDef.order,
+            topicId: subtopicDef.topicId,
+            classLevel: subtopicDef.classLevel,
+            subject: subtopicDef.subject,
           },
           source: "bank" as const,
         };
@@ -779,7 +774,7 @@ Return ONLY this JSON:
 
     try {
       const response = await anthropic.messages.create({
-        model: "claude-opus-4-5",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 3500,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
@@ -865,7 +860,6 @@ Return ONLY this JSON:
           totalShown: 0,
           totalCorrect: 0,
         },
-        include: { subtopic: true },
       });
 
       return {
@@ -874,12 +868,12 @@ Return ONLY this JSON:
         passage: parsed.passage,
         questions: poolQuestions.slice(0, 5),
         subtopic: {
-          id: session.subtopic.id,
-          name: session.subtopic.name,
-          order: session.subtopic.order,
-          topicId: session.subtopic.topicId,
-          classLevel: session.subtopic.classLevel,
-          subject: session.subtopic.subject,
+          id: subtopicDef.id,
+          name: subtopicDef.name,
+          order: subtopicDef.order,
+          topicId: subtopicDef.topicId,
+          classLevel: subtopicDef.classLevel,
+          subject: subtopicDef.subject,
         },
         source: "generated" as const,
       };

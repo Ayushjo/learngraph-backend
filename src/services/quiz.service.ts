@@ -2,6 +2,7 @@ import { prisma } from "../db/prisma";
 import { subtopicService } from "./subtopics.service";
 import { conceptService } from "./concept.service";
 import { questionBankService } from "./question.bank.service";
+import { passageBankService } from "./passage.bank.service";
 import { AppError } from "../middleware/errorHandler";
 import { Prisma } from "@prisma/client";
 import { getDriver } from "../db/neo4j";
@@ -156,6 +157,7 @@ export const quizService = {
       const backup = pool.find(
         (q) =>
           q.index >= 5 &&
+          q.index !== questionIndex &&
           q.conceptTag === question.conceptTag &&
           !shownQuestions.includes(q.index) &&
           !newPendingRetries.includes(q.index),
@@ -183,7 +185,27 @@ export const quizService = {
     });
 
     if (sessionComplete) {
+      await prisma.quizAttempt.upsert({
+        where: { sessionId },
+        update: {},
+        create: {
+          studentId: session.studentId,
+          sessionId,
+          score: newTotalCorrect,
+          total: newTotalShown,
+          answers: newShownQuestions as unknown as Prisma.InputJsonValue,
+        },
+      });
+
       await subtopicService.updateSubtopicMastery(studentId, session.subtopicId);
+
+      const passage = await prisma.passageBank.findFirst({
+        where: { subtopicId: session.subtopicId, passage: session.passage },
+        select: { id: true },
+      });
+      if (passage) {
+        await passageBankService.updatePassageQuality(passage.id);
+      }
     }
 
     const summary: SessionSummary | null = sessionComplete
@@ -303,6 +325,16 @@ export const quizService = {
       },
     });
 
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        totalShown: 5,
+        totalCorrect: score,
+        sessionStatus: "complete",
+        shownQuestions: [0, 1, 2, 3, 4] as unknown as Prisma.InputJsonValue,
+      },
+    });
+
     const pool = session.questionPool as unknown as PoolQuestion[];
     const poolByIndex = new Map(pool.map((q) => [q.index, q]));
 
@@ -326,6 +358,14 @@ export const quizService = {
       studentId,
       session.subtopicId,
     );
+
+    const passage = await prisma.passageBank.findFirst({
+      where: { subtopicId: session.subtopicId, passage: session.passage },
+      select: { id: true },
+    });
+    if (passage) {
+      await passageBankService.updatePassageQuality(passage.id);
+    }
 
     const driver = getDriver();
     const neo4jSession = driver.session();
