@@ -665,6 +665,35 @@ Get mastery for a single topic/chapter.
 
 ---
 
+### GET `/api/graph/:studentId/memory-profile`
+Returns the smart-forgetting profile used by the Learning Brain UI.
+
+**Query params:** `subject` (optional), `classLevel` (optional), `limit` (optional, default 12)
+
+**Response includes:**
+- `overview`: state counts + average forget risk
+- `regions`: chapter-level chamber distribution and top fragile concepts
+- `concepts`: top concepts by forget-risk score
+- `recommendations`: action-oriented concept recommendations with rationale
+- `copyGuidelines`: non-medical messaging guidance for the UI
+
+**Memory chamber values:** `new_exposure` | `fragile` | `stabilizing` | `durable`
+
+---
+
+### GET `/api/graph/:studentId/memory-metrics`
+Returns delayed-recall and experiment tracking metrics for evaluating the smart-forgetting system.
+
+**Query params:** `subject` (optional), `classLevel` (optional)
+
+**Response includes:**
+- `observed`: 7-day retention, 30-day retention, recommendation follow-through proxy, active learning days
+- `denominators`: sample sizes for each metric
+- `targets`: benchmark goals
+- `experimentDesign`: A/B split, run duration, and KPI guidance
+
+---
+
 ## 7. Data Models Reference
 
 ### Mastery levels
@@ -675,6 +704,14 @@ Get mastery for a single topic/chapter.
 | `developing` | 0.4–0.6 | Making progress |
 | `proficient` | 0.6–0.8 | Good understanding |
 | `mastered` | ≥ 0.8 | Excellent command |
+
+### Memory chamber levels (Learning Brain)
+| Value | Meaning |
+|-------|---------|
+| `new_exposure` | Concept was seen recently; evidence still low |
+| `fragile` | High risk of forgetting without quick retrieval practice |
+| `stabilizing` | Improving retention with spaced reinforcement |
+| `durable` | Stable long-term retention signal |
 
 ### Cognitive levels (question types)
 | Value | Description |

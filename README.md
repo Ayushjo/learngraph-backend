@@ -140,6 +140,8 @@ GET   /api/quiz/attempt/:sessionId         — Retrieve a past attempt (query: ?
 ### Knowledge Graph
 ```
 GET   /api/graph/:studentId                — Full student knowledge graph
+GET   /api/graph/:studentId/memory-profile — Learning Brain memory chambers + forget-risk recommendations
+GET   /api/graph/:studentId/memory-metrics — Delayed recall and experiment tracking metrics
 GET   /api/graph/:studentId/filtered       — Filtered subgraph (query: ?subject=&classLevel=)
 GET   /api/graph/:studentId/recommendations — Study recommendations (query: ?subject=&classLevel=&limit=)
 GET   /api/graph/:studentId/topic/:topicId — Mastery for a specific topic
