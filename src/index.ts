@@ -11,6 +11,7 @@ import contentRoutes from "./routes/content";
 import quizRoutes from "./routes/quiz";
 import graphRoutes from "./routes/graph";
 import subtopicRoutes from "./routes/subtopics";
+import reviewRoutes from "./routes/review";
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use("/api/content", contentRoutes);
 app.use("/api/quiz", quizRoutes);
 app.use("/api/graph", graphRoutes);
 app.use("/api/subtopics", subtopicRoutes);
+app.use("/api/review", reviewRoutes);
 
 app.use(errorHandler);
 

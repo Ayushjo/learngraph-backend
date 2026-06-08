@@ -3,6 +3,7 @@ import { subtopicService } from "./subtopics.service";
 import { conceptService } from "./concept.service";
 import { questionBankService } from "./question.bank.service";
 import { passageBankService } from "./passage.bank.service";
+import { triggerPreemptiveGeneration } from "../services/preemptive.service";
 import { AppError } from "../middleware/errorHandler";
 import { Prisma } from "@prisma/client";
 import { getDriver } from "../db/neo4j";
@@ -197,7 +198,7 @@ export const quizService = {
         },
       });
 
-      await subtopicService.updateSubtopicMastery(studentId, session.subtopicId);
+      const masteryResult = await subtopicService.updateSubtopicMastery(studentId, session.subtopicId);
 
       const passage = await prisma.passageBank.findFirst({
         where: { subtopicId: session.subtopicId, passage: session.passage },
@@ -205,6 +206,12 @@ export const quizService = {
       });
       if (passage) {
         await passageBankService.updatePassageQuality(passage.id);
+      }
+
+      if (masteryResult.justCompleted && masteryResult.nextSubtopicId) {
+        triggerPreemptiveGeneration(session.studentId, session.subtopicId).catch(
+          (err) => console.error("Preemptive generation error:", err),
+        );
       }
     }
 
@@ -365,6 +372,12 @@ export const quizService = {
     });
     if (passage) {
       await passageBankService.updatePassageQuality(passage.id);
+    }
+
+    if (masteryResult.justCompleted && masteryResult.nextSubtopicId) {
+      triggerPreemptiveGeneration(session.studentId, session.subtopicId).catch(
+        (err) => console.error("Preemptive generation error:", err),
+      );
     }
 
     const driver = getDriver();

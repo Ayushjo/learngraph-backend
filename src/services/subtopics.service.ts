@@ -194,6 +194,7 @@ export const subtopicService = {
     const chapterMastery = await this.syncChapterMasteryToNeo4j(
       studentId,
       subtopicDef.topicId,
+      trend,
     );
 
     return {
@@ -208,7 +209,11 @@ export const subtopicService = {
     };
   },
 
-  async syncChapterMasteryToNeo4j(studentId: string, topicId: string): Promise<number> {
+  async syncChapterMasteryToNeo4j(
+    studentId: string,
+    topicId: string,
+    chapterTrend?: "improving" | "declining" | "stable",
+  ): Promise<number> {
     const topic = TOPICS.find((t) => t.id === topicId);
     if (!topic) return 0;
 
@@ -220,6 +225,17 @@ export const subtopicService = {
     const sumMastery = records.reduce((sum, r) => sum + r.mastery, 0);
     const chapterMastery = Math.round((sumMastery / totalSubtopics) * 10000) / 10000;
 
+    // Compute aggregate chapter trend from subtopic trends if not provided
+    const trend = chapterTrend ?? (() => {
+      const trends = records.map((r) => r.trend).filter(Boolean);
+      if (trends.length === 0) return "stable";
+      const improving = trends.filter((t) => t === "improving").length;
+      const declining = trends.filter((t) => t === "declining").length;
+      if (improving > declining) return "improving";
+      if (declining > improving) return "declining";
+      return "stable";
+    })();
+
     const driver = getDriver();
     const session = driver.session();
     try {
@@ -229,12 +245,14 @@ export const subtopicService = {
          MATCH (t:Topic {id: $topicId})
          MERGE (s)-[k:KNOWS]->(t)
          SET k.mastery       = $mastery,
+             k.trend         = $trend,
              k.lastAttempted = $lastAttempted,
              k.attempts      = $attempts`,
         {
           studentId,
           topicId,
           mastery: chapterMastery,
+          trend,
           lastAttempted: new Date().toISOString(),
           attempts: records.length > 0 ? records.reduce((sum, r) => sum + r.attempts, 0) : 0,
         },

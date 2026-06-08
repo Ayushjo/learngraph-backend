@@ -38,6 +38,9 @@ export const contentController = {
         studentId,
         subtopicId,
         studentContext,
+        (title, passage) => {
+          send("passage", { title, passage });
+        },
       );
 
       send("result", result);

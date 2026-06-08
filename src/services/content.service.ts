@@ -386,7 +386,6 @@ ${conceptContext}
 ${masteryLabelInstructions}
 
 ${allocationTable}
-${QUESTION_RULES_BLOCK(questionTypes, hasConceptData, subtopicId)}
 
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY this JSON:
@@ -408,8 +407,25 @@ Return ONLY this JSON:
   const response = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 2000,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
+    system: [
+      {
+        type: "text",
+        text: systemPrompt,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: userPrompt,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ],
   });
 
   const rawContent = response.content[0];
@@ -453,6 +469,7 @@ export const contentService = {
     studentId: string,
     subtopicId: string,
     studentContext: StudentContextInput,
+    onPassageReady?: (title: string, passage: string) => void,
   ) {
     const subtopicDef = getSubtopicById(subtopicId);
     if (!subtopicDef) throw new AppError(404, `Subtopic ${subtopicId} not found`);
@@ -713,7 +730,7 @@ ${wrongQuestionsContext}`
         )
       : "";
 
-    const userPrompt = `Generate a reading passage and 8 quiz questions for:
+    const passageOnlyPrompt = `Generate a reading passage for:
 
 SUBTOPIC: ${subtopicName}
 CHAPTER: ${topicId.replace(/_/g, " ")}
@@ -750,34 +767,37 @@ Context: ${profile.examContext}
 - Every example must be Indian
 - Terminology must match NCERT Class ${classLevel} exactly
 ${prereqReinforcementInstruction}
-${allocationTable || fallbackBloomsNote}
-${QUESTION_RULES_BLOCK(questionTypes, hasConceptData, subtopicId)}
 
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY this JSON:
 {
   "title": "engaging title max 8 words",
-  "passage": "full passage text",
-  "questions": [
-    {
-      "index": 0,
-      "cognitiveLevel": "recall",
-      "conceptTag": "tag_name",
-      "difficulty": 0.25,
-      "question": "question text",
-      "options": ["A. text", "B. text", "C. text", "D. text"],
-      "correctIndex": 0,
-      "explanation": "explanation referencing passage"
-    }
-  ]
+  "passage": "full passage text"
 }`;
 
     try {
       const response = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 3500,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
+        max_tokens: 800,
+        system: [
+          {
+            type: "text",
+            text: systemPrompt,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: passageOnlyPrompt,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
+          },
+        ],
       });
 
       const rawContent = response.content[0];
@@ -788,33 +808,28 @@ Return ONLY this JSON:
         .replace(/```\n?/g, "")
         .trim();
 
-      let parsed: { title: string; passage: string; questions: GeneratedQuestion[] };
+      let parsed: { title: string; passage: string };
       try {
         parsed = JSON.parse(cleaned);
       } catch {
         throw new AppError(500, "Claude returned invalid JSON — please retry");
       }
 
-      if (
-        !parsed.title ||
-        !parsed.passage ||
-        !Array.isArray(parsed.questions) ||
-        parsed.questions.length !== 8
-      ) {
+      if (!parsed.title || !parsed.passage) {
         throw new AppError(500, "Claude returned incomplete content — please retry");
       }
 
-      const missingFields = parsed.questions.some(
-        (q) =>
-          typeof q.conceptTag !== "string" ||
-          q.conceptTag.length === 0 ||
-          typeof q.difficulty !== "number",
-      );
-      if (missingFields) {
-        throw new AppError(500, "Claude returned questions without required conceptTag or difficulty — please retry");
-      }
+      onPassageReady?.(parsed.title, parsed.passage);
 
-      const conceptTags = [...new Set(parsed.questions.map((q) => q.conceptTag))];
+      const generatedQuestions = await generateQuestionsForPassage(
+        parsed.passage,
+        subtopicId,
+        subtopicName,
+        classLevel as 11 | 12,
+        allocation,
+        conceptStates,
+      );
+      const conceptTags = [...new Set(generatedQuestions.map((q) => q.conceptTag))];
 
       const passageId = await passageBankService.storePassage(
         subtopicId,
@@ -824,7 +839,7 @@ Return ONLY this JSON:
         parsed.title,
         parsed.passage,
         conceptTags,
-        parsed.questions,
+        generatedQuestions,
       );
 
       const storedQuestionIds = await prisma.passageBankQuestion
@@ -835,7 +850,7 @@ Return ONLY this JSON:
         Array.from(storedQuestionIds.entries()).map(([idx, id]) => [idx, id]),
       );
 
-      const poolQuestions = buildSessionPool(parsed.questions, bankIdMap);
+      const poolQuestions = buildSessionPool(generatedQuestions, bankIdMap);
 
       await passageBankService.recordPassageSeen(studentId, passageId);
       await Promise.all(
@@ -843,6 +858,35 @@ Return ONLY this JSON:
           questionBankService.recordQuestionSeen(studentId, id),
         ),
       );
+
+      const recentSession = await prisma.session.findFirst({
+        where: {
+          studentId,
+          subtopicId,
+          sessionStatus: "active",
+          createdAt: { gte: new Date(Date.now() - 5 * 60 * 1000) },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (recentSession) {
+        const existingPool = recentSession.questionPool as typeof poolQuestions;
+        return {
+          sessionId: recentSession.id,
+          title: parsed.title,
+          passage: recentSession.passage,
+          questions: existingPool.slice(0, 5),
+          subtopic: {
+            id: subtopicDef.id,
+            name: subtopicDef.name,
+            order: subtopicDef.order,
+            topicId: subtopicDef.topicId,
+            classLevel: subtopicDef.classLevel,
+            subject: subtopicDef.subject,
+          },
+          source: "generated" as const,
+        };
+      }
 
       const session = await prisma.session.create({
         data: {
@@ -890,5 +934,198 @@ Return ONLY this JSON:
     });
     if (!session) throw new AppError(404, "Session not found");
     return session;
+  },
+
+  /**
+   * Phase 1 — generate a cross-concept spaced-repetition review session.
+   *
+   * Takes a list of ConceptState objects (from getDueForReview), finds their
+   * subtopics, picks the primary subtopic (most due concepts), generates a
+   * passage anchored there, then allocates questions across all due concepts.
+   */
+  async generateReviewSession(
+    studentId: string,
+    dueConceptStates: ConceptState[],
+  ): Promise<{
+    sessionId: string;
+    title: string;
+    passage: string;
+    questions: GeneratedQuestion[];
+    subtopicId: string;
+    reviewedConceptCount: number;
+    source: "generated";
+  }> {
+    if (dueConceptStates.length === 0) {
+      throw new AppError(400, "No due concepts provided for review session");
+    }
+
+    // ── Find primary subtopic (the one that owns the most due concepts) ──────
+    const conceptRows = await prisma.concept.findMany({
+      where: { id: { in: dueConceptStates.map((c) => c.conceptId) } },
+      select: { id: true, subtopicId: true },
+    });
+
+    const subtopicCount: Record<string, number> = {};
+    for (const row of conceptRows) {
+      subtopicCount[row.subtopicId] = (subtopicCount[row.subtopicId] ?? 0) + 1;
+    }
+    const primarySubtopicId = Object.entries(subtopicCount).sort(([, a], [, b]) => b - a)[0][0];
+
+    const subtopicDef = getSubtopicById(primarySubtopicId);
+    if (!subtopicDef) throw new AppError(404, `Primary subtopic ${primarySubtopicId} not found`);
+
+    const { classLevel, name: subtopicName, keyConceptsSummary, topicId } = subtopicDef;
+    if (classLevel !== 11 && classLevel !== 12) {
+      throw new AppError(400, "Only Class 11 and 12 supported");
+    }
+
+    const profile = gradeProfiles[classLevel as 11 | 12];
+
+    // ── Build concept context for due concepts ────────────────────────────────
+    const conceptContext = buildConceptContext(dueConceptStates);
+    const forgettingContext = buildForgettingContext(dueConceptStates);
+    const masteryLabelInstructions = buildMasteryLabelInstructions(dueConceptStates);
+
+    // ── Build question allocation across all due concepts ─────────────────────
+    const allocation = buildQuestionAllocation(dueConceptStates);
+
+    const allocationTable = buildAllocationTable(
+      allocation.filter((s) => !s.isBackup) as QuestionSlot[],
+    );
+
+    // ── System prompt — review-specific ──────────────────────────────────────
+    const systemPrompt = `You are an expert Indian Chemistry teacher and JEE/NEET educator with 20 years of experience.
+
+Your job is to generate a SPACED REPETITION REVIEW passage and exactly 8 quiz questions.
+
+This is a REVIEW session — the student has previously studied these concepts but memory is fading.
+Your passage must REACTIVATE faded memories, not teach from scratch.
+Connect concepts to real Indian examples they may remember.
+
+CRITICAL RULES:
+1. Passage MUST cover all listed FORGETTING ALERT concepts prominently
+2. Every question must be answerable from the passage alone
+3. Output ONLY valid JSON — no markdown, no backticks, no extra text
+4. Use Indian context throughout
+5. Content must be NCERT-aligned and JEE/NEET relevant
+6. Generate EXACTLY 8 questions — no more, no less`;
+
+    const userPrompt = `Generate a spaced-repetition review passage and 8 questions.
+
+PRIMARY SUBTOPIC: ${subtopicName}
+CHAPTER: ${topicId.replace(/_/g, " ")}
+CLASS: ${classLevel}
+EXAM BOARD: NCERT (JEE/NEET relevant)
+
+${conceptContext}
+${forgettingContext}
+${masteryLabelInstructions}
+
+━━━ SUBTOPIC FOCUS ━━━
+Core concepts: ${keyConceptsSummary}
+
+━━━ CLASS ${classLevel} STUDENT PROFILE ━━━
+Vocabulary: ${profile.vocabulary}
+Tone: ${profile.tone}
+Context: ${profile.examContext}
+
+━━━ REVIEW PASSAGE REQUIREMENTS ━━━
+- Length: strictly 200-250 words
+- This is a REVIEW — build on prior knowledge, don't introduce from scratch
+- Open with a memory hook ("Remember how...", "You've seen that...", "Recall that...")
+- Reinforce every concept listed in FORGETTING ALERT
+- 2-3 vivid Indian examples to anchor the memory
+- End with a bridge connecting these concepts to a related topic
+
+${allocationTable}
+
+━━━ OUTPUT FORMAT ━━━
+Return ONLY this JSON:
+{
+  "title": "engaging review title max 8 words",
+  "passage": "full passage text"
+}`;
+
+    const passageResponse = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 800,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: [{ type: "text", text: userPrompt, cache_control: { type: "ephemeral" } }] }],
+    });
+
+    const rawPassage = passageResponse.content[0];
+    if (rawPassage.type !== "text") throw new AppError(500, "Unexpected response from Claude");
+    const cleanedPassage = rawPassage.text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    let parsedPassage: { title: string; passage: string };
+    try {
+      parsedPassage = JSON.parse(cleanedPassage);
+    } catch {
+      throw new AppError(500, "Claude returned invalid JSON for review passage");
+    }
+    if (!parsedPassage.title || !parsedPassage.passage) {
+      throw new AppError(500, "Claude returned incomplete review passage");
+    }
+
+    // ── Generate questions ────────────────────────────────────────────────────
+    const generatedQuestions = await generateQuestionsForPassage(
+      parsedPassage.passage,
+      primarySubtopicId,
+      subtopicName,
+      classLevel as 11 | 12,
+      allocation as QuestionSlot[],
+      dueConceptStates,
+    );
+
+    // ── Store passage + questions ─────────────────────────────────────────────
+    const passageId = await passageBankService.storePassage(
+      primarySubtopicId,
+      topicId,
+      subtopicDef.subject,
+      classLevel,
+      parsedPassage.title,
+      parsedPassage.passage,
+      [...new Set(generatedQuestions.map((q) => q.conceptTag))],
+      generatedQuestions,
+    );
+
+    const storedQuestionIds = await prisma.passageBankQuestion
+      .findMany({ where: { passageId }, orderBy: { index: "asc" }, select: { questionId: true, index: true } })
+      .then((rows) => new Map(rows.map((r) => [r.index, r.questionId])));
+
+    const bankIdMap = new Map(Array.from(storedQuestionIds.entries()).map(([idx, id]) => [idx, id]));
+    const poolQuestions = buildSessionPool(generatedQuestions, bankIdMap);
+
+    await passageBankService.recordPassageSeen(studentId, passageId);
+    await Promise.all(
+      Array.from(storedQuestionIds.values()).map((id) => questionBankService.recordQuestionSeen(studentId, id)),
+    );
+
+    const session = await prisma.session.create({
+      data: {
+        studentId,
+        subtopicId:   primarySubtopicId,
+        topicId,
+        neo4jTopicId: topicId,
+        classLevel,
+        passage:          parsedPassage.passage,
+        questions:        poolQuestions.slice(0, 5),
+        questionPool:     poolQuestions,
+        shownQuestions:   [],
+        pendingRetries:   [],
+        sessionStatus:    "active",
+        totalShown:       0,
+        totalCorrect:     0,
+      },
+    });
+
+    return {
+      sessionId:            session.id,
+      title:                parsedPassage.title,
+      passage:              parsedPassage.passage,
+      questions:            poolQuestions.slice(0, 5),
+      subtopicId:           primarySubtopicId,
+      reviewedConceptCount: dueConceptStates.length,
+      source:               "generated",
+    };
   },
 };

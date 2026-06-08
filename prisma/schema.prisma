@@ -13,11 +13,12 @@ model Student {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions          Session[]
-  quizAttempts      QuizAttempt[]
-  subtopicMasteries SubtopicMastery[]
-  conceptMasteries  ConceptMastery[]
-  seenContent       StudentSeenContent[]
+  sessions              Session[]
+  quizAttempts          QuizAttempt[]
+  subtopicMasteries     SubtopicMastery[]
+  conceptMasteries      ConceptMastery[]
+  conceptMasteryEvents  ConceptMasteryEvent[]
+  seenContent           StudentSeenContent[]
 }
 
 model Subtopic {
@@ -42,8 +43,9 @@ model Concept {
   name       String
   tag        String
 
-  subtopic         Subtopic         @relation(fields: [subtopicId], references: [id])
-  conceptMasteries ConceptMastery[]
+  subtopic              Subtopic              @relation(fields: [subtopicId], references: [id])
+  conceptMasteries      ConceptMastery[]
+  conceptMasteryEvents  ConceptMasteryEvent[]
 
   @@unique([subtopicId, tag])
 }
@@ -64,6 +66,13 @@ model ConceptMastery {
   lastAttempted      DateTime?
   retentionScore     Float    @default(1.0)
   halfLifeDays       Float    @default(1.0)
+
+  // FSRS-lite fields (Phase 2 — deeper memory model)
+  // conceptDifficulty: per-student difficulty for this concept (0=easy,1=hard); starts at 0.5
+  // easeFactor: SM-2-style interval multiplier; starts at 2.5, min 1.3
+  conceptDifficulty  Float    @default(0.5)
+  easeFactor         Float    @default(2.5)
+
   recallScore        Float    @default(0)
   vocabularyScore    Float    @default(0)
   causeEffectScore   Float    @default(0)
@@ -74,6 +83,29 @@ model ConceptMastery {
   concept Concept @relation(fields: [conceptId], references: [id])
 
   @@unique([studentId, conceptId])
+}
+
+// Append-only event log — every answer writes one row.
+// Enables: true velocity, trend, forgetting-curve replay, time-to-mastery analytics.
+model ConceptMasteryEvent {
+  id           String   @id @default(cuid())
+  studentId    String
+  conceptId    String
+  mastery      Float
+  effectiveMastery Float
+  retention    Float
+  halfLifeDays Float
+  velocity     Float
+  isCorrect    Boolean
+  cognitiveLevel String
+  difficulty   Float
+  createdAt    DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  concept Concept @relation(fields: [conceptId], references: [id])
+
+  @@index([studentId, conceptId, createdAt])
+  @@index([studentId, createdAt])
 }
 
 model SubtopicMastery {
