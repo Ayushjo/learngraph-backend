@@ -1,0 +1,52 @@
+{
+  "name": "submit_validation",
+  "description": "Submit a quality assessment of a generated passage and its questions. Score each dimension from 0.0 (fails) to 1.0 (excellent). Always call this tool.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "conceptCoverage": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Does the passage actually teach every target concept it was asked to cover?"
+      },
+      "answerability": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Is every question answerable from the passage alone, with no outside knowledge required?"
+      },
+      "keyCorrectness": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Is every marked-correct answer actually correct, and every distractor actually incorrect?"
+      },
+      "distractorQuality": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Are distractors plausible misconceptions a real student would fall for, not throwaway wrong answers?"
+      },
+      "lengthReadability": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Is the passage within 220-260 words and at the right grade level / readability?"
+      },
+      "issues": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Specific problems found, if any. Empty array if the content is clean."
+      }
+    },
+    "required": [
+      "conceptCoverage",
+      "answerability",
+      "keyCorrectness",
+      "distractorQuality",
+      "lengthReadability",
+      "issues"
+    ]
+  }
+}
