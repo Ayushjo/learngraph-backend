@@ -4,7 +4,7 @@ import { questionBankService } from "../question.bank.service";
 import { GeneratedQuestion, PoolQuestion } from "./types";
 import { ValidationOutcome } from "./validator";
 
-function buildSessionPool(
+export function buildSessionPool(
   questions: GeneratedQuestion[],
   bankQuestionIds: Map<number, string>,
 ): PoolQuestion[] {
@@ -93,7 +93,7 @@ interface CreateSessionArgs {
   classLevel: number;
   passage: string;
   poolQuestions: PoolQuestion[];
-  promptVersion: string;
+  promptVersion?: string;
   generationSummary?: string;
 }
 
@@ -115,7 +115,7 @@ export async function createGeneratedSession(args: CreateSessionArgs) {
       sessionStatus: "active",
       totalShown: 0,
       totalCorrect: 0,
-      promptVersion,
+      ...(promptVersion ? { promptVersion } : {}),
       ...(generationSummary ? { generationSummary } : {}),
     },
   });
