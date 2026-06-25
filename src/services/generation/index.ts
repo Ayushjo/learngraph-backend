@@ -20,6 +20,7 @@ import {
   findRecentActiveSession,
   createGeneratedSession,
   attachGenerationSummary,
+  recordPassageValidation,
   buildSessionPool,
 } from "./persister";
 
@@ -64,10 +65,25 @@ function fireCoverageSummary(
     .catch(() => {});
 }
 
+interface ValidateInput {
+  subtopicName: string;
+  targetConceptTags: string[];
+  passage: string;
+  questions: GeneratedQuestion[];
+}
+
+/** Validate a passage and record the score without blocking — used by the live path. */
+function fireValidation(passageId: string, input: ValidateInput): void {
+  validateContent(input)
+    .then((outcome) => recordPassageValidation(passageId, outcome).catch(() => {}))
+    .catch(() => {});
+}
+
 interface GeneratedContent {
   passage: GeneratedPassage;
   questions: GeneratedQuestion[];
-  validation: ValidationOutcome;
+  /** Present only for background generation; null on the live path (validated async). */
+  validation: ValidationOutcome | null;
 }
 
 /**
@@ -87,7 +103,7 @@ async function generateValidatedContent(
   targetConceptTags: string[],
   onPassageReady?: (title: string, passage: string) => void,
 ): Promise<GeneratedContent> {
-  const attempt = async (): Promise<GeneratedContent> => {
+  const attempt = async () => {
     const passage = await generatePassage(passagePrompt);
     const questions = await generateQuestions(buildQuestionsFor(passage.passage));
     const validation = await validateContent({
@@ -100,16 +116,13 @@ async function generateValidatedContent(
   };
 
   if (onPassageReady) {
+    // Live path: stream the passage immediately, then generate questions. Validation
+    // happens asynchronously after persist (see caller) so it never adds latency to
+    // the questions the student is waiting on.
     const passage = await generatePassage(passagePrompt);
     onPassageReady(passage.title, passage.passage);
     const questions = await generateQuestions(buildQuestionsFor(passage.passage));
-    const validation = await validateContent({
-      subtopicName,
-      targetConceptTags,
-      passage: passage.passage,
-      questions,
-    });
-    return { passage, questions, validation };
+    return { passage, questions, validation: null };
   }
 
   const first = await attempt();
@@ -269,15 +282,17 @@ export const contentService = {
         conceptStates,
       });
 
+    const targetConceptTags = conceptTagsOf(conceptStates, subtopicId);
+
     const { passage, questions, validation } = await generateValidatedContent(
       passagePrompt,
       buildQuestionsFor,
       subtopicName,
-      conceptTagsOf(conceptStates, subtopicId),
+      targetConceptTags,
       onPassageReady,
     );
 
-    const { poolQuestions } = await persistGeneratedContent({
+    const { passageId, poolQuestions } = await persistGeneratedContent({
       studentId,
       subtopicId,
       topicId,
@@ -286,8 +301,13 @@ export const contentService = {
       title: passage.title,
       passage: passage.passage,
       questions,
-      validation,
+      validation: validation ?? undefined,
     });
+
+    // Live path returned no validation (to avoid latency) — validate asynchronously.
+    if (!validation) {
+      fireValidation(passageId, { subtopicName, targetConceptTags, passage: passage.passage, questions });
+    }
 
     // A preemptive session may already exist — reuse it rather than duplicate.
     const recent = await findRecentActiveSession(studentId, subtopicId);
@@ -403,7 +423,7 @@ export const contentService = {
       title: passage.title,
       passage: passage.passage,
       questions,
-      validation,
+      validation: validation ?? undefined,
     });
 
     const session = await createGeneratedSession({

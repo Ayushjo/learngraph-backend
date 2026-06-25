@@ -126,3 +126,14 @@ export async function attachGenerationSummary(sessionId: string, summary: string
   if (!summary) return;
   await prisma.session.update({ where: { id: sessionId }, data: { generationSummary: summary } });
 }
+
+/** Record a validation outcome on a passage after the fact (live path, fire-and-forget). */
+export async function recordPassageValidation(
+  passageId: string,
+  validation: ValidationOutcome,
+): Promise<void> {
+  await prisma.passageBank.update({
+    where: { id: passageId },
+    data: { validationScore: validation.aggregate, validationIssues: validation.issues },
+  });
+}
