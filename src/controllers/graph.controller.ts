@@ -64,4 +64,52 @@ export const graphController = {
       next(error);
     }
   },
+
+  async getConceptGraph(req: Request, res: Response, next: NextFunction) {
+    try {
+      const studentId = req.params.studentId as string;
+      const graph = await neo4jService.getConceptGraph(studentId);
+      res.status(200).json({ success: true, data: graph });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async getUnmasteredPrerequisites(req: Request, res: Response, next: NextFunction) {
+    try {
+      const studentId = req.params.studentId as string;
+      const conceptTag = req.params.conceptTag as string;
+      const threshold = req.query.threshold
+        ? parseFloat(req.query.threshold as string)
+        : 0.6;
+      const prerequisites = await neo4jService.getUnmasteredPrerequisites(
+        studentId,
+        conceptTag,
+        threshold,
+      );
+      res.status(200).json({ success: true, data: prerequisites });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async getConceptRecommendations(req: Request, res: Response, next: NextFunction) {
+    try {
+      const studentId = req.params.studentId as string;
+      const subject = (req.query.subject as string) || "Chemistry";
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+      const threshold = req.query.threshold
+        ? parseFloat(req.query.threshold as string)
+        : 0.6;
+      const recommendations = await neo4jService.getRecommendedConcepts(
+        studentId,
+        subject,
+        limit,
+        threshold,
+      );
+      res.status(200).json({ success: true, data: recommendations });
+    } catch (error) {
+      next(error);
+    }
+  },
 };

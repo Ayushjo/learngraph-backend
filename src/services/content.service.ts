@@ -6,6 +6,8 @@ import { getSubtopicById } from "../data/subtopics";
 import { ConceptState } from "./concept.service";
 import { passageBankService } from "./passage.bank.service";
 import { questionBankService, AssemblySlot } from "./question.bank.service";
+import { generationLogService } from "./generation-log.service";
+import { misconceptionService, MisconceptionRecord } from "./misconception.service";
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -317,6 +319,7 @@ export type StudentContextInput = {
   }>;
   lastScorePercentage: number;
   conceptStates?: ConceptState[];
+  misconceptions?: MisconceptionRecord[];
   weakestPrerequisiteDetail?: {
     topicId: string;
     topicName: string;
@@ -361,6 +364,7 @@ async function generateQuestionsForPassage(
   classLevel: 11 | 12,
   allocation: QuestionSlot[],
   conceptStates: ConceptState[],
+  misconceptionContext = "",
 ): Promise<GeneratedQuestion[]> {
   const hasConceptData = conceptStates.length > 0;
   const conceptContext = hasConceptData ? buildConceptContext(conceptStates) : "";
@@ -384,6 +388,7 @@ ${passage}
 
 ${conceptContext}
 ${masteryLabelInstructions}
+${misconceptionContext ? `\n${misconceptionContext}\nUse misconceptions above as inspiration for plausible wrong-answer distractors.\n` : ""}
 
 ${allocationTable}
 
@@ -426,6 +431,15 @@ Return ONLY this JSON:
         ],
       },
     ],
+  });
+
+  await generationLogService.log({
+    stage: "generate",
+    model: "claude-haiku-4-5-20251001",
+    promptVersion: "questions-inline-v0",
+    inputTokens: response.usage?.input_tokens,
+    outputTokens: response.usage?.output_tokens,
+    source: "generated",
   });
 
   const rawContent = response.content[0];
@@ -484,6 +498,9 @@ export const contentService = {
     const isRetry = studentContext.previousAttempts > 0;
 
     const conceptStates = studentContext.conceptStates ?? [];
+    const misconceptionContext = studentContext.misconceptions?.length
+      ? misconceptionService.formatForPrompt(studentContext.misconceptions)
+      : "";
 
     const allocation = buildQuestionAllocation(conceptStates);
     const hasConceptData = allocation.length > 0;
@@ -538,6 +555,12 @@ export const contentService = {
             },
           });
 
+          await generationLogService.log({
+            sessionId: session.id,
+            stage: "persist",
+            source: "bank",
+          });
+
           return {
             sessionId: session.id,
             title: passage.title,
@@ -562,6 +585,7 @@ export const contentService = {
           classLevel as 11 | 12,
           allocation,
           conceptStates,
+          misconceptionContext,
         );
 
         const storedIds = await passageBankService.storeQuestionsForPassage(
@@ -776,6 +800,7 @@ Return ONLY this JSON:
 }`;
 
     try {
+      const passageStart = Date.now();
       const response = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 800,
@@ -819,6 +844,16 @@ Return ONLY this JSON:
         throw new AppError(500, "Claude returned incomplete content — please retry");
       }
 
+      await generationLogService.log({
+        stage: "generate",
+        model: "claude-haiku-4-5-20251001",
+        promptVersion: "passage-inline-v0",
+        inputTokens: response.usage?.input_tokens,
+        outputTokens: response.usage?.output_tokens,
+        latencyMs: Date.now() - passageStart,
+        source: "generated",
+      });
+
       onPassageReady?.(parsed.title, parsed.passage);
 
       const generatedQuestions = await generateQuestionsForPassage(
@@ -828,6 +863,7 @@ Return ONLY this JSON:
         classLevel as 11 | 12,
         allocation,
         conceptStates,
+        misconceptionContext,
       );
       const conceptTags = [...new Set(generatedQuestions.map((q) => q.conceptTag))];
 
@@ -988,6 +1024,10 @@ Return ONLY this JSON:
 
     // ── Build question allocation across all due concepts ─────────────────────
     const allocation = buildQuestionAllocation(dueConceptStates);
+    const reviewMisconceptions = await misconceptionService.getForConceptTags(
+      dueConceptStates.map((c) => c.tag),
+    );
+    const reviewMisconceptionContext = misconceptionService.formatForPrompt(reviewMisconceptions);
 
     const allocationTable = buildAllocationTable(
       allocation.filter((s) => !s.isBackup) as QuestionSlot[],
@@ -1074,6 +1114,7 @@ Return ONLY this JSON:
       classLevel as 11 | 12,
       allocation as QuestionSlot[],
       dueConceptStates,
+      reviewMisconceptionContext,
     );
 
     // ── Store passage + questions ─────────────────────────────────────────────

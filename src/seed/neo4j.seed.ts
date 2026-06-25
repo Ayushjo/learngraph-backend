@@ -1,6 +1,6 @@
 import neo4j from "neo4j-driver";
 import dotenv from "dotenv";
-import { TOPICS } from "../data/subtopics";
+import { TOPICS, getAllConceptPrerequisiteEdges, getAllConceptRelatedEdges } from "../data/subtopics";
 dotenv.config();
 
 const driver = neo4j.driver(
@@ -83,6 +83,7 @@ const seed = async () => {
     console.log("🌱 Starting Neo4j seed...");
 
     console.log("🗑️  Clearing existing graph...");
+    console.log("   ⚠️  This destroys all Student/KNOWS/KNOWS_CONCEPT edges.");
     await session.run("MATCH (n) DETACH DELETE n");
 
     console.log("🔒 Creating constraints...");
@@ -93,6 +94,10 @@ const seed = async () => {
     await session.run(`
       CREATE CONSTRAINT subtopic_id IF NOT EXISTS
       FOR (s:Subtopic) REQUIRE s.id IS UNIQUE
+    `);
+    await session.run(`
+      CREATE CONSTRAINT concept_id IF NOT EXISTS
+      FOR (c:Concept) REQUIRE c.id IS UNIQUE
     `);
 
     console.log(`📚 Creating ${TOPICS.length} topic nodes...`);
@@ -140,6 +145,31 @@ const seed = async () => {
       );
     }
 
+    const allConcepts = allSubtopics.flatMap((sub) =>
+      sub.concepts.map((concept) => ({ ...concept, subtopicId: sub.id })),
+    );
+    console.log(`🧠 Creating ${allConcepts.length} concept nodes...`);
+    for (const concept of allConcepts) {
+      await session.run(
+        `MERGE (c:Concept {id: $id})
+         SET c.tag        = $tag,
+             c.name       = $name,
+             c.subtopicId = $subtopicId`,
+        {
+          id: concept.id,
+          tag: concept.tag,
+          name: concept.name,
+          subtopicId: concept.subtopicId,
+        },
+      );
+
+      await session.run(
+        `MATCH (c:Concept {id: $conceptId}), (s:Subtopic {id: $subtopicId})
+         MERGE (c)-[:PART_OF]->(s)`,
+        { conceptId: concept.id, subtopicId: concept.subtopicId },
+      );
+    }
+
     console.log("🔗 Creating NEXT_SUBTOPIC edges...");
     for (const topic of TOPICS) {
       const subs = topic.subtopics.sort((a, b) => a.order - b.order);
@@ -171,16 +201,41 @@ const seed = async () => {
       );
     }
 
+    const conceptPrereqs = getAllConceptPrerequisiteEdges();
+    console.log(`🔗 Creating ${conceptPrereqs.length} concept prerequisite edges...`);
+    for (const edge of conceptPrereqs) {
+      await session.run(
+        `MATCH (a:Concept {tag: $fromTag}), (b:Concept {tag: $toTag})
+         MERGE (a)-[:REQUIRES]->(b)`,
+        edge,
+      );
+    }
+
+    const conceptRelated = getAllConceptRelatedEdges();
+    console.log(`🔗 Creating ${conceptRelated.length} concept related edges...`);
+    for (const edge of conceptRelated) {
+      await session.run(
+        `MATCH (a:Concept {tag: $fromTag}), (b:Concept {tag: $toTag})
+         MERGE (a)-[:RELATED_TO]->(b)
+         MERGE (b)-[:RELATED_TO]->(a)`,
+        edge,
+      );
+    }
+
     const topicCount = await session.run("MATCH (t:Topic) RETURN count(t) AS c");
     const subCount = await session.run("MATCH (s:Subtopic) RETURN count(s) AS c");
+    const conceptCount = await session.run("MATCH (c:Concept) RETURN count(c) AS c");
     const reqCount = await session.run("MATCH ()-[r:REQUIRES]->() RETURN count(r) AS c");
     const nextCount = await session.run("MATCH ()-[r:NEXT_SUBTOPIC]->() RETURN count(r) AS c");
+    const partOfCount = await session.run("MATCH ()-[r:PART_OF]->() RETURN count(r) AS c");
 
     console.log("\n✅ Seed complete!");
     console.log(`   Topics (chapters):  ${topicCount.records[0].get("c")}`);
     console.log(`   Subtopics:          ${subCount.records[0].get("c")}`);
+    console.log(`   Concepts:           ${conceptCount.records[0].get("c")}`);
     console.log(`   Prerequisites:      ${reqCount.records[0].get("c")}`);
     console.log(`   Next subtopic:      ${nextCount.records[0].get("c")}`);
+    console.log(`   PART_OF edges:      ${partOfCount.records[0].get("c")}`);
   } catch (error) {
     console.error("❌ Seed failed:", error);
     throw error;

@@ -10,7 +10,9 @@
     "db:push": "prisma db push",
     "db:seed:neo4j": "ts-node src/seed/neo4j.seed.ts",
     "db:seed:postgres": "ts-node src/seed/postgres.seed.ts",
-    "db:seed": "npm run db:seed:neo4j && npm run db:seed:postgres"
+    "db:seed:misconceptions": "ts-node src/seed/misconceptions.seed.ts",
+    "db:seed": "npm run db:seed:neo4j && npm run db:seed:postgres && npm run db:seed:misconceptions",
+    "eval:golden-set": "ts-node scripts/eval-golden-set.ts"
   },
   "keywords": [],
   "author": "",

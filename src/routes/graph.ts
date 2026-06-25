@@ -4,7 +4,10 @@ import { graphController } from "../controllers/graph.controller";
 const router = Router();
 
 router.get("/:studentId", graphController.getStudentGraph);
+router.get("/:studentId/concepts", graphController.getConceptGraph);
+router.get("/:studentId/concepts/:conceptTag/prerequisites", graphController.getUnmasteredPrerequisites);
 router.get("/:studentId/filtered", graphController.getFilteredGraph);
+router.get("/:studentId/recommendations/concepts", graphController.getConceptRecommendations);
 router.get("/:studentId/recommendations", graphController.getRecommendations);
 router.get("/:studentId/topic/:topicId", graphController.getTopicMastery);
 

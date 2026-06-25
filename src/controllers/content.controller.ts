@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { contentService } from "../services/content.service";
 import { subtopicService } from "../services/subtopics.service";
+import { generationLogService } from "../services/generation-log.service";
 import { AppError } from "../middleware/errorHandler";
 
 export const contentController = {
@@ -58,6 +59,16 @@ export const contentController = {
       if (!studentId) throw new AppError(400, "studentId is required");
       const session = await contentService.getSession(sessionId, studentId);
       res.status(200).json({ success: true, data: session });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async getGenerationStats(req: Request, res: Response, next: NextFunction) {
+    try {
+      const days = req.query.days ? parseInt(req.query.days as string) : 7;
+      const stats = await generationLogService.getDailyStats(days);
+      res.status(200).json({ success: true, data: stats });
     } catch (error) {
       next(error);
     }
