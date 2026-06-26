@@ -1,0 +1,28 @@
+{
+  "name": "submit_coverage_summary",
+  "description": "Submit a compact summary of this generation so future generations in the same chapter have real context. Always call this tool.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "examplesUsed": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Concrete Indian examples / scenarios used in the passage (e.g. 'NaCl electron transfer', 'Born-Haber cycle')."
+      },
+      "conceptsCovered": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Key concepts explained in the passage."
+      },
+      "approachAngle": {
+        "type": "string",
+        "description": "One sentence describing the angle / framing used so a retry can take a different one."
+      },
+      "questionAngles": {
+        "type": "string",
+        "description": "Brief summary of the cognitive levels and concept angles the questions tested."
+      }
+    },
+    "required": ["examplesUsed", "conceptsCovered", "approachAngle", "questionAngles"]
+  }
+}

@@ -141,6 +141,12 @@ model Session {
   totalCorrect   Int    @default(0)
   createdAt    DateTime @default(now())
 
+  // Generation pipeline metadata (Pillar A)
+  // promptVersion: which prompt template version produced this session (A1)
+  // generationSummary: compact coverage summary for chapter thread context (A5)
+  promptVersion     String?
+  generationSummary String?
+
   student     Student      @relation(fields: [studentId], references: [id])
   subtopic    Subtopic     @relation(fields: [subtopicId], references: [id])
   quizAttempt QuizAttempt?
@@ -172,6 +178,11 @@ model PassageBank {
   averageScore Float    @default(0)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
+
+  // LLM-judge validation (Pillar A4) — quality score independent of question correctness.
+  // null until the validator runs; aggregate 0-1 of the rubric dimensions.
+  validationScore  Float?
+  validationIssues String[] @default([])
 
   questions PassageBankQuestion[]
 }

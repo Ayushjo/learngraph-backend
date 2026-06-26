@@ -38,7 +38,7 @@ R = e^(-t / S)
 
 - `R` = retention (0.0 to 1.0, representing probability of recall)
 - `t` = time elapsed since last review
-- `S` = memory stability (the "half-life" — time at which retention is ~63%)
+- `S` = memory stability (the time constant — time at which retention is ~37%, i.e. ~63% has been forgotten)
 
 This is the exact formula implemented in Learngraph.
 
