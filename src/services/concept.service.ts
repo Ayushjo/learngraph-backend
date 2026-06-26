@@ -8,7 +8,7 @@ const daysSince = (date: Date | null): number => {
   return (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24);
 };
 
-const computeRetention = (lastAttempted: Date | null, halfLifeDays: number): number => {
+export const computeRetention = (lastAttempted: Date | null, halfLifeDays: number): number => {
   const days = daysSince(lastAttempted);
   if (days === 0) return 1.0;
   return Math.exp(-days / halfLifeDays);

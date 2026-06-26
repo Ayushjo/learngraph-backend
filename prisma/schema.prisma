@@ -230,3 +230,31 @@ model StudentSeenContent {
 
   @@unique([studentId, contentType, contentId])
 }
+
+model Misconception {
+  id         String @id @default(cuid())
+  conceptTag String
+  belief     String
+  why        String
+
+  @@index([conceptTag])
+}
+
+model GenerationLog {
+  id              String   @id @default(cuid())
+  sessionId       String?
+  stage           String
+  model           String?
+  promptVersion   String?
+  inputTokens     Int?
+  outputTokens    Int?
+  latencyMs       Int?
+  source          String?
+  validationScore Float?
+  retries         Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sessionId])
+  @@index([stage])
+}

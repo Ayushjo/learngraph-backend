@@ -5,7 +5,8 @@ import {
   TOPICS,
   getNextSubtopic,
 } from "../data/subtopics";
-import { conceptService, ConceptState } from "./concept.service";
+import { conceptService, ConceptState, computeRetention } from "./concept.service";
+import { misconceptionService } from "./misconception.service";
 
 const COMPLETION_THRESHOLD = 0.6;
 
@@ -257,11 +258,66 @@ export const subtopicService = {
           attempts: records.length > 0 ? records.reduce((sum, r) => sum + r.attempts, 0) : 0,
         },
       );
+
+      await this.syncConceptMasteryToNeo4j(studentId, topicId, trend);
     } finally {
       await session.close();
     }
 
     return chapterMastery;
+  },
+
+  async syncConceptMasteryToNeo4j(
+    studentId: string,
+    topicId: string,
+    fallbackTrend: "improving" | "declining" | "stable" = "stable",
+  ): Promise<void> {
+    const topic = TOPICS.find((t) => t.id === topicId);
+    if (!topic) return;
+
+    const subtopicIds = topic.subtopics.map((s) => s.id);
+    const masteryRecords = await prisma.conceptMastery.findMany({
+      where: { studentId, concept: { subtopicId: { in: subtopicIds } } },
+      include: { concept: true },
+    });
+
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      await session.run(`MERGE (s:Student {id: $studentId})`, { studentId });
+
+      for (const record of masteryRecords) {
+        const retention = computeRetention(record.lastAttempted, record.halfLifeDays);
+        const mastery = conceptService.getEffectiveMastery(record);
+        const conceptTrend =
+          record.velocity > 0.05
+            ? "improving"
+            : record.velocity < -0.05
+              ? "declining"
+              : fallbackTrend;
+
+        await session.run(
+          `MATCH (s:Student {id: $studentId}), (c:Concept {id: $conceptId})
+           MERGE (s)-[k:KNOWS_CONCEPT]->(c)
+           SET k.mastery       = $mastery,
+               k.retention     = $retention,
+               k.trend         = $trend,
+               k.lastAttempted = $lastAttempted,
+               k.attempts      = $attempts`,
+          {
+            studentId,
+            conceptId: record.conceptId,
+            mastery,
+            retention,
+            trend: conceptTrend,
+            lastAttempted: record.lastAttempted?.toISOString() ?? null,
+            attempts: record.attempts,
+          },
+        );
+      }
+    } finally {
+      await session.close();
+    }
   },
 
   async getStudentContextForSubtopic(
@@ -284,6 +340,7 @@ export const subtopicService = {
     }>;
     lastScorePercentage: number;
     conceptStates: ConceptState[];
+    misconceptions: Array<{ conceptTag: string; belief: string; why: string }>;
   }> {
     const subtopic = await prisma.subtopic.findUnique({ where: { id: subtopicId } });
     if (!subtopic) throw new AppError(404, "Subtopic not found");
@@ -468,6 +525,9 @@ export const subtopicService = {
       await neo4jSession.close();
     }
 
+    const conceptTags = conceptStates.map((c) => c.tag);
+    const misconceptions = await misconceptionService.getForConceptTags(conceptTags);
+
     return {
       previousAttempts: masteryRecord?.attempts ?? 0,
       previousMastery: masteryRecord?.mastery ?? 0,
@@ -479,6 +539,7 @@ export const subtopicService = {
       wrongQuestions,
       lastScorePercentage,
       conceptStates,
+      misconceptions,
     };
   },
 

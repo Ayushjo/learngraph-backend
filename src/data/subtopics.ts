@@ -2,6 +2,8 @@ export interface ConceptDefinition {
   id: string;
   name: string;
   tag: string;
+  prerequisites?: string[];
+  related?: string[];
 }
 
 export interface SubtopicDefinition {
@@ -41,7 +43,7 @@ export const TOPICS: TopicDefinition[] = [
           "importance of chemistry in daily life, matter classification into elements compounds and mixtures, physical and chemical properties, measurement and SI units",
         concepts: [
           { id: "c11_basic_concepts_s1_matter_classification", name: "Matter Classification", tag: "matter_classification" },
-          { id: "c11_basic_concepts_s1_properties", name: "Physical Chemical Properties", tag: "physical_chemical_properties" },
+          { id: "c11_basic_concepts_s1_properties", name: "Physical Chemical Properties", tag: "physical_chemical_properties", prerequisites: ["matter_classification"] },
           { id: "c11_basic_concepts_s1_si_units", name: "SI Units and Measurement", tag: "si_units_measurement" },
         ],
       },
@@ -56,9 +58,9 @@ export const TOPICS: TopicDefinition[] = [
           "law of conservation of mass, law of definite proportions, law of multiple proportions, Gay-Lussac's law, Avogadro's law, Dalton's atomic theory and its postulates",
         concepts: [
           { id: "c11_basic_concepts_s2_conservation_mass", name: "Law of Conservation of Mass", tag: "conservation_mass" },
-          { id: "c11_basic_concepts_s2_definite_proportions", name: "Law of Definite Proportions", tag: "definite_proportions" },
-          { id: "c11_basic_concepts_s2_multiple_proportions", name: "Law of Multiple Proportions", tag: "multiple_proportions" },
-          { id: "c11_basic_concepts_s2_dalton_theory", name: "Dalton's Atomic Theory", tag: "dalton_theory" },
+          { id: "c11_basic_concepts_s2_definite_proportions", name: "Law of Definite Proportions", tag: "definite_proportions", prerequisites: ["conservation_mass"] },
+          { id: "c11_basic_concepts_s2_multiple_proportions", name: "Law of Multiple Proportions", tag: "multiple_proportions", prerequisites: ["definite_proportions"] },
+          { id: "c11_basic_concepts_s2_dalton_theory", name: "Dalton's Atomic Theory", tag: "dalton_theory", prerequisites: ["conservation_mass", "definite_proportions"] },
         ],
       },
       {
@@ -71,10 +73,10 @@ export const TOPICS: TopicDefinition[] = [
         keyConceptsSummary:
           "atomic mass unit, average atomic mass, molecular mass, formula mass, mole concept, Avogadro number, molar mass, relationship between mole number mass and volume",
         concepts: [
-          { id: "c11_basic_concepts_s3_atomic_mass", name: "Atomic and Molecular Mass", tag: "atomic_molecular_mass" },
-          { id: "c11_basic_concepts_s3_mole_concept", name: "Mole Concept", tag: "mole_concept" },
-          { id: "c11_basic_concepts_s3_avogadro", name: "Avogadro's Number", tag: "avogadro_number" },
-          { id: "c11_basic_concepts_s3_molar_mass", name: "Molar Mass Calculations", tag: "molar_mass" },
+          { id: "c11_basic_concepts_s3_atomic_mass", name: "Atomic and Molecular Mass", tag: "atomic_molecular_mass", prerequisites: ["dalton_theory"] },
+          { id: "c11_basic_concepts_s3_mole_concept", name: "Mole Concept", tag: "mole_concept", prerequisites: ["atomic_molecular_mass", "avogadro_number"] },
+          { id: "c11_basic_concepts_s3_avogadro", name: "Avogadro's Number", tag: "avogadro_number", prerequisites: ["dalton_theory"] },
+          { id: "c11_basic_concepts_s3_molar_mass", name: "Molar Mass Calculations", tag: "molar_mass", prerequisites: ["mole_concept", "atomic_molecular_mass"] },
         ],
       },
       {
@@ -87,9 +89,9 @@ export const TOPICS: TopicDefinition[] = [
         keyConceptsSummary:
           "percentage composition from molecular formula, empirical formula from percentage composition, molecular formula from empirical formula, determining formula of unknown compound",
         concepts: [
-          { id: "c11_basic_concepts_s4_percent_composition", name: "Percentage Composition", tag: "percent_composition" },
-          { id: "c11_basic_concepts_s4_empirical_formula", name: "Empirical Formula", tag: "empirical_formula" },
-          { id: "c11_basic_concepts_s4_molecular_formula", name: "Molecular Formula", tag: "molecular_formula" },
+          { id: "c11_basic_concepts_s4_percent_composition", name: "Percentage Composition", tag: "percent_composition", prerequisites: ["molar_mass", "mole_concept"] },
+          { id: "c11_basic_concepts_s4_empirical_formula", name: "Empirical Formula", tag: "empirical_formula", prerequisites: ["percent_composition", "mole_concept"] },
+          { id: "c11_basic_concepts_s4_molecular_formula", name: "Molecular Formula", tag: "molecular_formula", prerequisites: ["empirical_formula", "molar_mass"] },
         ],
       },
       {
@@ -102,9 +104,9 @@ export const TOPICS: TopicDefinition[] = [
         keyConceptsSummary:
           "stoichiometric calculations, mole-mass-volume relationships in reactions, limiting reagent concept, theoretical yield actual yield percentage yield",
         concepts: [
-          { id: "c11_basic_concepts_s5_stoichiometry", name: "Stoichiometric Calculations", tag: "stoichiometry" },
-          { id: "c11_basic_concepts_s5_limiting_reagent", name: "Limiting Reagent", tag: "limiting_reagent" },
-          { id: "c11_basic_concepts_s5_percent_yield", name: "Percentage Yield", tag: "percent_yield" },
+          { id: "c11_basic_concepts_s5_stoichiometry", name: "Stoichiometric Calculations", tag: "stoichiometry", prerequisites: ["mole_concept", "molar_mass"] },
+          { id: "c11_basic_concepts_s5_limiting_reagent", name: "Limiting Reagent", tag: "limiting_reagent", prerequisites: ["stoichiometry"] },
+          { id: "c11_basic_concepts_s5_percent_yield", name: "Percentage Yield", tag: "percent_yield", prerequisites: ["stoichiometry", "limiting_reagent"] },
         ],
       },
     ],
@@ -314,7 +316,7 @@ export const TOPICS: TopicDefinition[] = [
           "Kossel-Lewis approach, octet rule, electrovalent bond formation, lattice energy Born-Haber cycle, factors affecting ionic bond formation, properties of ionic compounds",
         concepts: [
           { id: "c11_chemical_bonding_s1_ionic_bond", name: "Ionic Bond Formation", tag: "ionic_bond_formation" },
-          { id: "c11_chemical_bonding_s1_lattice_energy", name: "Lattice Energy", tag: "lattice_energy" },
+          { id: "c11_chemical_bonding_s1_lattice_energy", name: "Lattice Energy", tag: "lattice_energy", related: ["enthalpy"] },
           { id: "c11_chemical_bonding_s1_born_haber", name: "Born-Haber Cycle", tag: "born_haber_cycle" },
         ],
       },
@@ -530,7 +532,7 @@ export const TOPICS: TopicDefinition[] = [
         keyConceptsSummary:
           "enthalpy definition H=U+PV, enthalpy change at constant pressure, heat capacity Cp and Cv, relationship Cp-Cv=R, measurement of enthalpy change, calorimetry",
         concepts: [
-          { id: "c11_thermodynamics_s2_enthalpy", name: "Enthalpy Definition", tag: "enthalpy" },
+          { id: "c11_thermodynamics_s2_enthalpy", name: "Enthalpy Definition", tag: "enthalpy", related: ["lattice_energy"] },
           { id: "c11_thermodynamics_s2_heat_capacity", name: "Heat Capacity Cp and Cv", tag: "heat_capacity" },
           { id: "c11_thermodynamics_s2_calorimetry", name: "Calorimetry", tag: "calorimetry" },
         ],
@@ -1800,3 +1802,43 @@ export const getConceptsBySubtopic = (subtopicId: string): ConceptDefinition[] =
 
 export const getConceptById = (id: string): ConceptDefinition | undefined =>
   getAllSubtopics().flatMap((s) => s.concepts).find((c) => c.id === id);
+
+export const getConceptByTag = (tag: string): ConceptDefinition | undefined =>
+  getAllSubtopics().flatMap((s) => s.concepts).find((c) => c.tag === tag);
+
+export interface ConceptEdge {
+  fromTag: string;
+  toTag: string;
+}
+
+export const getAllConceptPrerequisiteEdges = (): ConceptEdge[] => {
+  const edges: ConceptEdge[] = [];
+  for (const topic of TOPICS) {
+    for (const sub of topic.subtopics) {
+      for (const concept of sub.concepts) {
+        for (const prereqTag of concept.prerequisites ?? []) {
+          edges.push({ fromTag: concept.tag, toTag: prereqTag });
+        }
+      }
+    }
+  }
+  return edges;
+};
+
+export const getAllConceptRelatedEdges = (): ConceptEdge[] => {
+  const edges: ConceptEdge[] = [];
+  const seen = new Set<string>();
+  for (const topic of TOPICS) {
+    for (const sub of topic.subtopics) {
+      for (const concept of sub.concepts) {
+        for (const relatedTag of concept.related ?? []) {
+          const key = [concept.tag, relatedTag].sort().join("|");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          edges.push({ fromTag: concept.tag, toTag: relatedTag });
+        }
+      }
+    }
+  }
+  return edges;
+};
